@@ -10,13 +10,22 @@ Operator dashboard for Phantom Protocol — stake, monitor relayer status, valid
 4. **Environment Variable** (required): `VITE_API_URL` = your relayer URL (e.g. `https://phantom-relayer.onrender.com`)
 5. Click **Deploy**
 
+## Share with others
+
+Add the API URL to the link so it works for everyone:
+
+```
+https://relayer-phi.vercel.app/?api=https://YOUR-RELAYER-URL.com
+```
+
+Replace `YOUR-RELAYER-URL.com` with your relayer backend (e.g. `https://phantom-protocol.onrender.com`). Share this link — the API is pre-configured.
+
 ## Fix "Failed to fetch"
 
-1. **Set VITE_API_URL** in Vercel: Project → Settings → Environment Variables → Add `VITE_API_URL` = your relayer URL
-2. **Redeploy** after adding the env var
-3. **Relayer must use HTTPS** — `http://` URLs are blocked by browsers when the dashboard is on HTTPS
-4. **Relayer must allow CORS** — the backend uses `cors({ origin: true })` which allows all origins
-5. **Relayer must be running** — Render free tier sleeps after 15 min; first request may be slow
+1. **Use the `?api=` link** when sharing (see above)
+2. **Or set VITE_API_URL** in Vercel: Project → Settings → Environment Variables → Add `VITE_API_URL` = your relayer URL, then redeploy
+3. **Relayer must use HTTPS** — `http://` is blocked by browsers
+4. **Relayer must be running** — Render free tier sleeps after 15 min; first request may be slow
 
 ## Usage
 
