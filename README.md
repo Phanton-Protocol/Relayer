@@ -48,6 +48,17 @@ Stakers can validate by signing in their wallet — no server to run:
 
 Keep the tab open when you want to validate. Deploy coordinator to Render for 24/7.
 
+## Deploy Coordinator (for Join as validator)
+
+The "Join as validator" button needs the coordinator. Deploy from **Phanton-Protocol/core**:
+
+1. Render Dashboard → **New** → **Blueprint**
+2. Connect the core repo
+3. Render creates **phantom-validator-coordinator** from render.yaml
+4. First connection can take 30–60s (free tier sleeps)
+
+Or add manually: New Web Service → connect repo → start command: `node backend/src/validatorCoordinator.js` → env: `RELAYER_STAKING_ADDRESS`, `RPC_URL`.
+
 ## Usage
 
 1. Open the deployed URL
