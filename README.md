@@ -48,16 +48,17 @@ Stakers can validate by signing in their wallet — no server to run:
 
 Keep the tab open when you want to validate. Deploy coordinator to Render for 24/7.
 
-## Deploy Coordinator (for Join as validator)
+## Deploy to Render (API + Coordinator)
 
-The "Join as validator" button needs the coordinator. Deploy from **Phanton-Protocol/core**:
+Deploy from this **Relayer repo** — no credit card required (public repo):
 
-1. Render Dashboard → **New** → **Blueprint**
-2. Connect the core repo
-3. Render creates **phantom-validator-coordinator** from render.yaml
-4. First connection can take 30–60s (free tier sleeps)
+1. **Add circuit files** — Copy from core: `circuits/joinsplit_js/joinsplit.wasm`, `circuits/joinsplit_0001.zkey`, `circuits/portfolio_note_js/portfolio_note.wasm`, `circuits/portfolio_note_0001.zkey` into this repo's `circuits/` folder
+2. Render Dashboard → **New** → **Blueprint**
+3. Connect **Phanton-Protocol/Relayer** (this repo)
+4. Blueprint path: `render.yaml`
+5. Set env vars (see `DEPLOY.md`)
 
-Or add manually: New Web Service → connect repo → start command: `node backend/src/validatorCoordinator.js` → env: `RELAYER_STAKING_ADDRESS`, `RPC_URL`.
+Render creates **phantom-protocol** (API) and **phantom-validator-coordinator** (for "Join as validator"). First connection can take 30–60s (free tier sleeps).
 
 ## Usage
 

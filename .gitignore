@@ -4,3 +4,11 @@ dist
 .env.local
 *.log
 .DS_Store
+
+# Backend
+backend/node_modules
+backend/data
+backend/config.json
+backend/*.db
+backend/*.db-wal
+backend/*.db-shm
