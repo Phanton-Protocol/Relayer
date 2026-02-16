@@ -464,10 +464,10 @@ function ValidatorSetup({ base, relayer, staking, wallet }) {
       const ws = wsRef.current;
       if (ws && ws.readyState === WebSocket.CONNECTING) {
         ws.close();
-        setValidatorError("Connection timed out. Coordinator may be sleeping (Render free tier) or not deployed. Try again.");
+        setValidatorError("Connection timed out (45s). Coordinator may be sleeping — wait 1 min and try again, or deploy phantom-validator-coordinator from render.yaml.");
         setValidatorConnecting(false);
       }
-    }, 15000);
+    }, 45000);
     try {
       const ws = new WebSocket(wsUrl);
       const clearConnecting = () => {
@@ -596,7 +596,12 @@ function ValidatorSetup({ base, relayer, staking, wallet }) {
           {!wallet?.address && <p style={{ color: "#f59e0b", fontSize: "0.9rem" }}>1. Connect wallet (top right)</p>}
           {wallet?.address && !staking?.isRelayerValid && <p style={{ color: "#f59e0b", fontSize: "0.9rem" }}>2. Stake ≥ 1000 SHDW in Relayer tab</p>}
           {wallet?.address && staking?.isRelayerValid && !coordinatorUrl && <p style={{ color: "#6b7280", fontSize: "0.9rem" }}>Coordinator not configured. Set VALIDATOR_COORDINATOR_WS_URL on relayer.</p>}
-          {validatorError && <p style={{ color: "#ef4444", fontSize: "0.9rem" }}>{validatorError}</p>}
+          {validatorError && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <p style={{ color: "#ef4444", fontSize: "0.9rem" }}>{validatorError}</p>
+              {!validatorConnected && <button onClick={joinValidator} style={{ padding: "0.4rem 0.8rem", background: "#374151", color: "#9ca3af", border: "none", borderRadius: 4, cursor: "pointer", fontSize: "0.85rem", alignSelf: "flex-start" }}>Retry</button>}
+            </div>
+          )}
         </div>
       </Card>
       <Card title="Validator Setup (Advanced)">
