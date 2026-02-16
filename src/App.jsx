@@ -424,6 +424,7 @@ export default function App() {
 function ValidatorSetup({ base, relayer, staking, wallet }) {
   const [validatorWs, setValidatorWs] = useState(null);
   const [validatorConnected, setValidatorConnected] = useState(false);
+  const [validatorConnecting, setValidatorConnecting] = useState(false);
   const [validatorError, setValidatorError] = useState(null);
   const [pendingProof, setPendingProof] = useState(null);
   const [vKey, setVKey] = useState(null);
@@ -444,12 +445,21 @@ function ValidatorSetup({ base, relayer, staking, wallet }) {
   }, [base]);
 
   const joinValidator = useCallback(() => {
-    if (!coordinatorUrl || !wallet?.address || !staking?.isRelayerValid) {
-      setValidatorError("Stake ≥ 1000 SHDW and connect wallet first.");
+    setValidatorError(null);
+    if (!wallet?.address) {
+      setValidatorError("Connect wallet first (top right).");
       return;
     }
-    setValidatorError(null);
+    if (!staking?.isRelayerValid) {
+      setValidatorError("Stake ≥ 1000 SHDW in the Relayer tab first. If staking shows an error, fix RELAYER_STAKING_ADDRESS on Render.");
+      return;
+    }
+    if (!coordinatorUrl) {
+      setValidatorError("Coordinator URL not configured. Set VALIDATOR_COORDINATOR_WS_URL on the relayer (e.g. wss://phantom-validator-coordinator.onrender.com).");
+      return;
+    }
     const wsUrl = coordinatorUrl.startsWith("ws") ? coordinatorUrl : `wss://${coordinatorUrl}`;
+    setValidatorConnecting(true);
     try {
       const ws = new WebSocket(wsUrl);
       ws.onopen = () => {
@@ -458,20 +468,29 @@ function ValidatorSetup({ base, relayer, staking, wallet }) {
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
-          if (msg.type === "error") setValidatorError(msg.message);
-          else if (msg.type === "registered") setValidatorConnected(true);
-          else if (msg.type === "verify") setPendingProof(msg);
+          if (msg.type === "error") {
+            setValidatorError(msg.message);
+            setValidatorConnecting(false);
+          } else if (msg.type === "registered") {
+            setValidatorConnected(true);
+            setValidatorConnecting(false);
+          } else if (msg.type === "verify") setPendingProof(msg);
         } catch (_) {}
       };
       ws.onclose = () => {
         setValidatorConnected(false);
         setValidatorWs(null);
+        setValidatorConnecting(false);
       };
-      ws.onerror = () => setValidatorError("WebSocket failed. Is coordinator running?");
+      ws.onerror = () => {
+        setValidatorError("Cannot connect to coordinator. Deploy phantom-validator-coordinator on Render, or it may be sleeping (first request can take 30s).");
+        setValidatorConnecting(false);
+      };
       wsRef.current = ws;
       setValidatorWs(ws);
     } catch (e) {
       setValidatorError(e.message);
+      setValidatorConnecting(false);
     }
   }, [coordinatorUrl, wallet?.address, staking?.isRelayerValid]);
 
@@ -531,19 +550,19 @@ function ValidatorSetup({ base, relayer, staking, wallet }) {
           {!validatorConnected ? (
             <button
               onClick={joinValidator}
-              disabled={!wallet?.address || !staking?.isRelayerValid || !coordinatorUrl}
+              disabled={validatorConnecting}
               style={{
                 padding: "0.6rem 1.2rem",
-                background: (!wallet?.address || !staking?.isRelayerValid || !coordinatorUrl) ? "#374151" : "#7c3aed",
+                background: validatorConnecting ? "#374151" : "#7c3aed",
                 color: "white",
                 border: "none",
                 borderRadius: 6,
-                cursor: (!wallet?.address || !staking?.isRelayerValid || !coordinatorUrl) ? "not-allowed" : "pointer",
+                cursor: validatorConnecting ? "wait" : "pointer",
                 fontWeight: 600,
                 fontSize: "1rem"
               }}
             >
-              Join as validator
+              {validatorConnecting ? "Connecting…" : "Join as validator"}
             </button>
           ) : (
               <div>
