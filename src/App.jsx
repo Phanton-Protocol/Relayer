@@ -460,8 +460,20 @@ function ValidatorSetup({ base, relayer, staking, wallet }) {
     }
     const wsUrl = coordinatorUrl.startsWith("ws") ? coordinatorUrl : `wss://${coordinatorUrl}`;
     setValidatorConnecting(true);
+    const timeout = setTimeout(() => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+        setValidatorError("Connection timed out. Coordinator may be sleeping (Render free tier) or not deployed. Try again.");
+        setValidatorConnecting(false);
+      }
+    }, 15000);
     try {
       const ws = new WebSocket(wsUrl);
+      const clearConnecting = () => {
+        clearTimeout(timeout);
+        setValidatorConnecting(false);
+      };
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "register", address: wallet.address }));
       };
@@ -470,8 +482,9 @@ function ValidatorSetup({ base, relayer, staking, wallet }) {
           const msg = JSON.parse(e.data);
           if (msg.type === "error") {
             setValidatorError(msg.message);
-            setValidatorConnecting(false);
+            clearConnecting();
           } else if (msg.type === "registered") {
+            clearTimeout(timeout);
             setValidatorConnected(true);
             setValidatorConnecting(false);
           } else if (msg.type === "verify") setPendingProof(msg);
@@ -480,15 +493,16 @@ function ValidatorSetup({ base, relayer, staking, wallet }) {
       ws.onclose = () => {
         setValidatorConnected(false);
         setValidatorWs(null);
-        setValidatorConnecting(false);
+        clearConnecting();
       };
       ws.onerror = () => {
-        setValidatorError("Cannot connect to coordinator. Deploy phantom-validator-coordinator on Render, or it may be sleeping (first request can take 30s).");
-        setValidatorConnecting(false);
+        setValidatorError("Cannot connect to coordinator. Deploy phantom-validator-coordinator on Render (see render.yaml), or it may be sleeping.");
+        clearConnecting();
       };
       wsRef.current = ws;
       setValidatorWs(ws);
     } catch (e) {
+      clearTimeout(timeout);
       setValidatorError(e.message);
       setValidatorConnecting(false);
     }
