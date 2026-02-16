@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { BrowserProvider, Contract, parseEther } from "ethers";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5050";
+const API_URL = import.meta.env.VITE_API_URL || "";
 const BSC_TESTNET = { chainId: 97, chainIdHex: "0x61", rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545", name: "BSC Testnet" };
 
 function getInjectedProvider() {
@@ -41,14 +41,14 @@ function useFetch(url, intervalMs = 0) {
 
 export default function App() {
   const [apiBase, setApiBase] = useState(() => localStorage.getItem("relayer_api") || API_URL);
-  const base = apiBase.replace(/\/$/, "");
+  const base = (apiBase || "").replace(/\/$/, "").trim();
 
-  const { data: health, error: healthError } = useFetch(`${base}/health`, 5000);
-  const { data: relayer } = useFetch(`${base}/relayer`, 10000);
-  const { data: staking, error: stakingError } = useFetch(`${base}/relayer/staking-status`, 10000);
-  const { data: proofStats } = useFetch(`${base}/relayer/proof-stats`, 5000);
-  const { data: stakingStats } = useFetch(`${base}/staking/stats`, 15000);
-  const { data: network } = useFetch(`${base}/relayer/network`, 0);
+  const { data: health, error: healthError } = useFetch(base ? `${base}/health` : null, 5000);
+  const { data: relayer } = useFetch(base ? `${base}/relayer` : null, 10000);
+  const { data: staking, error: stakingError } = useFetch(base ? `${base}/relayer/staking-status` : null, 10000);
+  const { data: proofStats } = useFetch(base ? `${base}/relayer/proof-stats` : null, 5000);
+  const { data: stakingStats } = useFetch(base ? `${base}/staking/stats` : null, 15000);
+  const { data: network } = useFetch(base ? `${base}/relayer/network` : null, 0);
 
   const [wallet, setWallet] = useState({ address: null, provider: null, signer: null });
   const [stakeAmount, setStakeAmount] = useState("");
@@ -204,7 +204,7 @@ export default function App() {
             type="text"
             value={apiBase}
             onChange={(e) => setApiBase(e.target.value)}
-            placeholder="https://your-relayer.onrender.com"
+            placeholder="https://your-relayer.onrender.com (required)"
             style={{
               flex: 1,
               padding: "0.5rem 0.75rem",
@@ -256,13 +256,19 @@ export default function App() {
       ) : (
       <section style={{ display: "grid", gap: "1.5rem" }}>
         <Card title="Health">
-          {health ? (
+          {!base ? (
+            <div style={{ color: "#f59e0b" }}>
+              Enter your relayer API URL above (e.g. https://your-relayer.onrender.com). The relayer must be running and allow CORS.
+            </div>
+          ) : health ? (
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e" }} />
               <span>OK — {health.status || "running"}</span>
             </div>
           ) : (
-            <div style={{ color: "#ef4444" }}>{healthError || "Cannot reach API. Is the relayer running?"}</div>
+            <div style={{ color: "#ef4444" }}>
+              {healthError || "Cannot reach API."} Check: (1) Relayer URL is correct and uses HTTPS, (2) Relayer is running, (3) Relayer allows CORS from this site.
+            </div>
           )}
         </Card>
 
