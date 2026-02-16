@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { BrowserProvider, Contract, parseEther } from "ethers";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { BrowserProvider, Contract, parseEther, keccak256, solidityPacked, getBytes, AbiCoder } from "ethers";
+import { groth16 } from "snarkjs";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
+const API_URL = import.meta.env.VITE_API_URL || "https://phantom-protocol.onrender.com";
 const BSC_TESTNET = { chainId: 97, chainIdHex: "0x61", rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545", name: "BSC Testnet" };
 
 function getInjectedProvider() {
@@ -21,9 +22,15 @@ function useFetch(url, intervalMs = 0) {
     if (!url) return;
     const fetchIt = () => {
       fetch(url, { mode: "cors" })
-        .then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
+        .then(async (r) => {
+          const text = await r.text();
+          let body;
+          try { body = text ? JSON.parse(text) : null; } catch { body = null; }
+          if (!r.ok) {
+            const msg = body?.error || `HTTP ${r.status}`;
+            throw new Error(msg);
+          }
+          return body;
         })
         .then((d) => { setData(d); setError(null); })
         .catch((e) => { setError(e.message); setData(null); })
@@ -260,7 +267,7 @@ export default function App() {
       </header>
 
       {tab === "validators" ? (
-        <ValidatorSetup />
+        <ValidatorSetup base={base} relayer={relayer} staking={staking} wallet={wallet} />
       ) : (
       <section style={{ display: "grid", gap: "1.5rem" }}>
         <Card title="Health">
@@ -414,18 +421,183 @@ export default function App() {
   );
 }
 
-function ValidatorSetup() {
+function ValidatorSetup({ base, relayer, staking, wallet }) {
+  const [validatorWs, setValidatorWs] = useState(null);
+  const [validatorConnected, setValidatorConnected] = useState(false);
+  const [validatorError, setValidatorError] = useState(null);
+  const [pendingProof, setPendingProof] = useState(null);
+  const [vKey, setVKey] = useState(null);
+  const wsRef = useRef(null);
+
+  const coordinatorUrl = relayer?.coordinatorWsUrl || (base ? (() => {
+    const u = base.replace(/\/$/, "").replace("phantom-protocol", "phantom-validator-coordinator");
+    if (u.includes("localhost")) return "ws://localhost:6005";
+    return (u.startsWith("https") ? "wss" : "ws") + u.slice(u.indexOf(":"));
+  })() : null);
+
+  useEffect(() => {
+    if (!base) return;
+    fetch(`${base}/verification-key`)
+      .then((r) => r.ok ? r.json() : null)
+      .then(setVKey)
+      .catch(() => setVKey(null));
+  }, [base]);
+
+  const joinValidator = useCallback(() => {
+    if (!coordinatorUrl || !wallet?.address || !staking?.isRelayerValid) {
+      setValidatorError("Stake ≥ 1000 SHDW and connect wallet first.");
+      return;
+    }
+    setValidatorError(null);
+    const wsUrl = coordinatorUrl.startsWith("ws") ? coordinatorUrl : `wss://${coordinatorUrl}`;
+    try {
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: "register", address: wallet.address }));
+      };
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "error") setValidatorError(msg.message);
+          else if (msg.type === "registered") setValidatorConnected(true);
+          else if (msg.type === "verify") setPendingProof(msg);
+        } catch (_) {}
+      };
+      ws.onclose = () => {
+        setValidatorConnected(false);
+        setValidatorWs(null);
+      };
+      ws.onerror = () => setValidatorError("WebSocket failed. Is coordinator running?");
+      wsRef.current = ws;
+      setValidatorWs(ws);
+    } catch (e) {
+      setValidatorError(e.message);
+    }
+  }, [coordinatorUrl, wallet?.address, staking?.isRelayerValid]);
+
+  const leaveValidator = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setValidatorWs(null);
+    setValidatorConnected(false);
+    setPendingProof(null);
+  }, []);
+
+  const signProof = useCallback(async () => {
+    if (!pendingProof || !wallet?.signer || !vKey) return;
+    const { requestId, proof, publicInputs } = pendingProof;
+    const pa = proof?.a || proof?.pi_a;
+    const pb = proof?.b || proof?.pi_b;
+    const pc = proof?.c || proof?.pi_c;
+    if (!pa || !pb || !pc) {
+      setValidatorError("Invalid proof format");
+      return;
+    }
+    try {
+      const proofSnarkJS = {
+        pi_a: pa.slice(0, 2),
+        pi_b: [[pb[0][1], pb[0][0]], [pb[1][1], pb[1][0]]],
+        pi_c: pc.slice(0, 2),
+        protocol: "groth16",
+        curve: "bn128"
+      };
+      const isValid = await groth16.verify(vKey, publicInputs, proofSnarkJS);
+      const coder = AbiCoder.defaultAbiCoder();
+      const a = coder.encode(["uint256[2]"], [pa.slice(0, 2)]);
+      const b = coder.encode(["uint256[2][2]"], [pb]);
+      const c = coder.encode(["uint256[2]"], [pc.slice(0, 2)]);
+      const proofHash = keccak256(coder.encode(["bytes", "bytes", "bytes", "uint256[]"], [a, b, c, publicInputs]));
+      const timestamp = Math.floor(Date.now() / 1000);
+      const message = keccak256(solidityPacked(["bytes32", "bool", "uint256"], [proofHash, isValid, timestamp]));
+      const signature = await wallet.signer.signMessage(getBytes(message));
+      wsRef.current?.send(JSON.stringify({ requestId, valid: isValid, signature, timestamp }));
+      setPendingProof(null);
+    } catch (e) {
+      setValidatorError(e.message);
+    }
+  }, [pendingProof, wallet?.signer, vKey]);
+
+  const rejectProof = useCallback(() => setPendingProof(null), []);
+
   return (
     <section style={{ display: "grid", gap: "1.5rem" }}>
-      <Card title="Validator Setup">
+      <Card title="Join as Validator (Sign in Browser)">
         <p style={{ color: "#9ca3af", marginBottom: "1rem", lineHeight: 1.6 }}>
-          Validators run a <strong>Node.js server</strong> — deploy to Render, Railway, or your own VPS.
+          Stake tokens, connect wallet, then click <strong>Join as validator</strong>. When a transaction needs validation, you'll get a Sign prompt — sign in MetaMask. No server to run.
         </p>
-        <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.95rem" }}>1. Stake SHDW</h4>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          {!validatorConnected ? (
+            <button
+              onClick={joinValidator}
+              disabled={!wallet?.address || !staking?.isRelayerValid || !coordinatorUrl}
+              style={{
+                padding: "0.6rem 1.2rem",
+                background: (!wallet?.address || !staking?.isRelayerValid || !coordinatorUrl) ? "#374151" : "#7c3aed",
+                color: "white",
+                border: "none",
+                borderRadius: 6,
+                cursor: (!wallet?.address || !staking?.isRelayerValid || !coordinatorUrl) ? "not-allowed" : "pointer",
+                fontWeight: 600,
+                fontSize: "1rem"
+              }}
+            >
+              Join as validator
+            </button>
+          ) : (
+              <div>
+                <span style={{ color: "#22c55e" }}>● Connected — waiting for proof requests</span>
+                <button onClick={leaveValidator} style={{ marginLeft: "1rem", padding: "0.25rem 0.5rem", background: "#374151", color: "#9ca3af", border: "none", borderRadius: 4, cursor: "pointer", fontSize: "0.85rem" }}>Leave</button>
+              </div>
+            )}
+            {pendingProof && (
+              <div style={{ background: "#0a0a0f", padding: "1rem", borderRadius: 6, marginTop: "0.5rem" }}>
+                <p style={{ margin: "0 0 0.5rem", fontSize: "0.9rem" }}>Proof request — sign in MetaMask:</p>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button onClick={signProof} style={{ padding: "0.5rem 1rem", background: "#22c55e", color: "white", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>Sign</button>
+                  <button onClick={rejectProof} style={{ padding: "0.5rem 1rem", background: "#374151", color: "#9ca3af", border: "none", borderRadius: 6, cursor: "pointer" }}>Skip</button>
+                </div>
+              </div>
+            )}
+          {!wallet?.address && <p style={{ color: "#f59e0b", fontSize: "0.9rem" }}>1. Connect wallet (top right)</p>}
+          {wallet?.address && !staking?.isRelayerValid && <p style={{ color: "#f59e0b", fontSize: "0.9rem" }}>2. Stake ≥ 1000 SHDW in Relayer tab</p>}
+          {wallet?.address && staking?.isRelayerValid && !coordinatorUrl && <p style={{ color: "#6b7280", fontSize: "0.9rem" }}>Coordinator not configured. Set VALIDATOR_COORDINATOR_WS_URL on relayer.</p>}
+          {validatorError && <p style={{ color: "#ef4444", fontSize: "0.9rem" }}>{validatorError}</p>}
+        </div>
+      </Card>
+      <Card title="Validator Setup (Advanced)">
+        <p style={{ color: "#9ca3af", marginBottom: "1rem", lineHeight: 1.6 }}>
+          <strong>Production:</strong> AWS Enclave. <strong>Alternative:</strong> Run Node.js client for auto-signing.
+        </p>
+        <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.95rem" }}>Option A: Node.js client (auto-sign)</h4>
         <p style={{ color: "#9ca3af", fontSize: "0.9rem", margin: 0 }}>
-          Stake ≥ 1000 SHDW in RelayerStaking. Use the <strong>Relayer</strong> tab above to stake.
+          Stake ≥ 1000 SHDW, then run the client. It connects to the coordinator and signs automatically.
         </p>
-        <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.95rem" }}>2. Run Validator Server</h4>
+        <pre style={{
+          background: "#0a0a0f",
+          padding: "1rem",
+          borderRadius: 6,
+          overflow: "auto",
+          fontSize: "0.8rem",
+          color: "#e0e0e8",
+          margin: "0.5rem 0"
+        }}>
+{`# Terminal 1: Start coordinator (once per network)
+cd backend && npm run validator:coordinator
+
+# Terminal 2: Each staker runs (after staking)
+export VALIDATOR_PRIVATE_KEY=0x...
+export COORDINATOR_URL=ws://localhost:6005
+npm run validator:client`}
+        </pre>
+        <p style={{ color: "#6b7280", fontSize: "0.85rem", margin: "0.5rem 0" }}>
+          Set <code style={{ background: "#2a2a3a", padding: "0.1rem 0.3rem", borderRadius: 4 }}>VALIDATOR_URLS</code>=<code style={{ background: "#2a2a3a", padding: "0.1rem 0.3rem", borderRadius: 4 }}>http://coordinator-host:6005</code> in relayer. Deploy coordinator to Render for 24/7.
+        </p>
+        <h4 style={{ margin: "1.5rem 0 0.5rem", fontSize: "0.95rem" }}>Option B: Full Validator Server</h4>
+        <p style={{ color: "#9ca3af", fontSize: "0.9rem", margin: 0 }}>
+          Deploy to Render, Railway, or VPS for 24/7 standalone validator.
+        </p>
         <pre style={{
           background: "#0a0a0f",
           padding: "1rem",
@@ -438,14 +610,10 @@ function ValidatorSetup() {
 {`cd backend
 export VALIDATOR_PRIVATE_KEY=0x...
 export VALIDATOR_PORT=6000
-export RELAYER_STAKING_ADDRESS=0xf68c0F35075c168289aF67E18698180b7F71a1e8
+export RELAYER_STAKING_ADDRESS=0x...
 export RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
 node src/validatorServer.js`}
         </pre>
-        <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.95rem" }}>3. Add to Relayer</h4>
-        <p style={{ color: "#9ca3af", fontSize: "0.9rem", margin: 0 }}>
-          Set <code style={{ background: "#2a2a3a", padding: "0.1rem 0.3rem", borderRadius: 4 }}>VALIDATOR_URLS</code> in relayer env: <code style={{ background: "#2a2a3a", padding: "0.1rem 0.3rem", borderRadius: 4 }}>https://your-validator.onrender.com</code>
-        </p>
         <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.95rem" }}>Threshold: 66%</h4>
         <p style={{ color: "#9ca3af", fontSize: "0.9rem", margin: 0 }}>
           Validators representing <strong>66% of total staked voting power</strong> must sign each proof.
