@@ -1,4 +1,5 @@
-# Render Blueprint - deploy from Relayer repo (public, no credit card)
+# Render Blueprint - 1 free service (no credit card required)
+# Render free tier allows only 1 web service. Coordinator can be added later.
 # https://render.com/docs/blueprint-spec
 
 services:
@@ -21,28 +22,6 @@ services:
         value: "90000"
       - key: RELAYER_STAKING_ADDRESS
         value: "0x3c8c698335A4942A52a709091a441f27FF2a5bc8"
-      - key: VALIDATOR_COORDINATOR_WS_URL
-        value: "wss://phantom-validator-coordinator.onrender.com"
       # Add in Render Dashboard > Environment:
       # RPC_URL, CHAIN_ID, RELAYER_PRIVATE_KEY, SHIELDED_POOL_ADDRESS,
       # NOTE_STORAGE_ADDRESS, SWAP_ADAPTOR_ADDRESS, DEV_BYPASS_VALIDATORS, DEV_BYPASS_PROOFS
-      # For browser validators: VALIDATOR_URLS=https://phantom-validator-coordinator.onrender.com
-
-  - type: web
-    name: phantom-validator-coordinator
-    runtime: node
-
-    buildCommand: |
-      npm install
-      npm run backend:install
-
-    startCommand: node backend/src/validatorCoordinator.js
-
-    envVars:
-      - key: RENDER
-        value: "1"
-      - key: RELAYER_STAKING_ADDRESS
-        value: "0x3c8c698335A4942A52a709091a441f27FF2a5bc8"
-      - key: RPC_URL
-        value: "https://data-seed-prebsc-1-s1.binance.org:8545"
-      # Add RPC_URL in Render Dashboard if different

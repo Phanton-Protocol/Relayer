@@ -58,7 +58,7 @@ Deploy from this **Relayer repo** — no credit card required (public repo):
 4. Blueprint path: `render.yaml`
 5. Set env vars (see `DEPLOY.md`)
 
-Render creates **phantom-protocol** (API) and **phantom-validator-coordinator** (for "Join as validator"). First connection can take 30–60s (free tier sleeps).
+Render creates **phantom-protocol** (API). Free tier = 1 service only. For "Join as validator" you'd need to add the coordinator as a separate service (requires paid plan). First connection can take 30–60s (free tier sleeps).
 
 ## Usage
 
