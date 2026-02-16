@@ -39,8 +39,16 @@ function useFetch(url, intervalMs = 0) {
   return { data, error, loading };
 }
 
+function getInitialApiUrl() {
+  if (typeof window === "undefined") return API_URL;
+  const params = new URLSearchParams(window.location.search);
+  const fromUrl = params.get("api");
+  if (fromUrl) return fromUrl.trim();
+  return localStorage.getItem("relayer_api") || API_URL;
+}
+
 export default function App() {
-  const [apiBase, setApiBase] = useState(() => localStorage.getItem("relayer_api") || API_URL);
+  const [apiBase, setApiBase] = useState(getInitialApiUrl);
   const base = (apiBase || "").replace(/\/$/, "").trim();
 
   const { data: health, error: healthError } = useFetch(base ? `${base}/health` : null, 5000);
