@@ -5,6 +5,7 @@
 services:
   - type: web
     name: phantom-protocol
+    plan: free
     runtime: node
 
     buildCommand: |
