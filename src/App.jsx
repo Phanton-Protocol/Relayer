@@ -6,6 +6,7 @@ const API_URL = import.meta.env.VITE_API_URL || "https://phantom-protocol.onrend
 const BSC_TESTNET = { chainId: 97, chainIdHex: "0x61", rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545", name: "BSC Testnet" };
 const FALLBACK_STAKING = "0x3c8c698335A4942A52a709091a441f27FF2a5bc8";
 const FALLBACK_TOKEN = "0x0e161E683c325482c165A2863b24157754c131f1";
+const BUILD_ID = "v3-approve-check";
 
 function getInjectedProvider() {
   if (typeof window === "undefined") return null;
@@ -77,10 +78,21 @@ export default function App() {
   const [approveTx, setApproveTx] = useState({ status: null, hash: null, error: null });
   const [connectError, setConnectError] = useState(null);
   const [connecting, setConnecting] = useState(false);
+  const [stakingTokenAddr, setStakingTokenAddr] = useState(null);
 
   useEffect(() => {
     localStorage.setItem("relayer_api", apiBase);
   }, [apiBase]);
+
+  useEffect(() => {
+    const stakingAddr = stakingStats?.stakingAddress || staking?.stakingAddress || FALLBACK_STAKING;
+    if (!stakingAddr) return;
+    const p = getInjectedProvider();
+    if (!p) return;
+    const prov = new BrowserProvider(p);
+    const c = new Contract(stakingAddr, ["function token() view returns (address)"], prov);
+    c.token().then((a) => setStakingTokenAddr(a)).catch(() => setStakingTokenAddr(null));
+  }, [stakingStats?.stakingAddress, staking?.stakingAddress]);
 
   const connectWallet = useCallback(async () => {
     const provider = getInjectedProvider();
@@ -162,8 +174,8 @@ export default function App() {
   }, [network?.chainId]);
 
   const approveTokens = async () => {
-    const stakingAddr = getAddress(FALLBACK_STAKING);
-    const tokenAddr = getAddress(FALLBACK_TOKEN);
+    const stakingAddr = getAddress(stakingStats?.stakingAddress || staking?.stakingAddress || FALLBACK_STAKING);
+    const tokenAddr = getAddress(stakingTokenAddr || stakingStats?.protocolTokenAddress || FALLBACK_TOKEN);
     if (!wallet.signer) return;
     setApproveTx({ status: "pending" });
     try {
@@ -179,8 +191,8 @@ export default function App() {
   };
 
   const stake = async () => {
-    const stakingAddr = getAddress(FALLBACK_STAKING);
-    const tokenAddr = getAddress(FALLBACK_TOKEN);
+    const stakingAddr = getAddress(stakingStats?.stakingAddress || staking?.stakingAddress || FALLBACK_STAKING);
+    const tokenAddr = getAddress(stakingTokenAddr || stakingStats?.protocolTokenAddress || FALLBACK_TOKEN);
     if (!wallet.signer || !stakeAmount) return;
     setStakeTx({ status: "pending" });
     try {
@@ -196,8 +208,16 @@ export default function App() {
         return;
       }
       setStakeTx({ status: "pending", step: "approve" });
-      const approveTx = await token.approve(stakingAddr, MaxUint256);
+      const approveTx = await token.approve(stakingAddr, amountWei);
       await approveTx.wait();
+      await new Promise((r) => setTimeout(r, 2000));
+      const allowanceAbi = ["function allowance(address,address) view returns (uint256)"];
+      const tokenCheck = new Contract(tokenAddr, allowanceAbi, wallet.signer);
+      const allowance = await tokenCheck.allowance(wallet.address, stakingAddr);
+      if (allowance < amountWei) {
+        setStakeTx({ status: "error", error: `Approve confirmed but allowance still ${allowance.toString()}. Token ${tokenAddr} may not match staking contract. Try adding this token in MetaMask.` });
+        return;
+      }
       setStakeTx({ status: "pending", step: "stake" });
       const tx = await stakingContract.stake(amountWei);
       await tx.wait();
@@ -220,7 +240,7 @@ export default function App() {
               Phantom Relayer Dashboard
             </h1>
             <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "#6b7280" }}>
-              Operator dashboard — not for end users
+              Operator dashboard — not for end users <span style={{ color: "#4b5563", fontSize: "0.7rem" }}>({BUILD_ID})</span>
             </p>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.5rem" }}>
@@ -376,7 +396,7 @@ export default function App() {
                   )}
                   <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: "0.25rem" }}>
                     <strong>Stake SHDW:</strong> Enter amount → Click <strong>Stake</strong>. If approval is needed, MetaMask will prompt twice (approve, then stake).
-                    <br /><span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>SHDW {FALLBACK_TOKEN.slice(0, 10)}… | Staking {FALLBACK_STAKING.slice(0, 10)}…</span>
+                    <br /><span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>SHDW: {(stakingTokenAddr || stakingStats?.protocolTokenAddress || FALLBACK_TOKEN).slice(0, 10)}… | Staking: {(stakingStats?.stakingAddress || FALLBACK_STAKING).slice(0, 10)}…</span>
                   </div>
                   {stakeTx.status === "error" && (stakeTx.error?.includes("insufficient allowance") || stakeTx.error?.includes("allowance")) && (
                     <div style={{ background: "#7f1d1d20", border: "1px solid #ef4444", borderRadius: 6, padding: "0.5rem 0.75rem", fontSize: "0.85rem", color: "#fca5a5", marginBottom: "0.5rem" }}>
