@@ -48,17 +48,15 @@ Stakers can validate by signing in their wallet — no server to run:
 
 Keep the tab open when you want to validate. Deploy coordinator to Render for 24/7.
 
-## Deploy to Render (API + Coordinator)
+## Deploy (no credit card)
 
-Deploy from this **Relayer repo** — no credit card required (public repo):
+**Koyeb** — free tier, no card required:
 
-1. **Add circuit files** — Copy from core: `circuits/joinsplit_js/joinsplit.wasm`, `circuits/joinsplit_0001.zkey`, `circuits/portfolio_note_js/portfolio_note.wasm`, `circuits/portfolio_note_0001.zkey` into this repo's `circuits/` folder
-2. Render Dashboard → **New** → **Blueprint**
-3. Connect **Phanton-Protocol/Relayer** (this repo)
-4. Blueprint path: `render.yaml`
-5. Set env vars (see `DEPLOY.md`)
+1. [koyeb.com](https://www.koyeb.com) → Create App → Docker → Connect **Phanton-Protocol/Relayer**
+2. Deploy (uses `Dockerfile`)
+3. Add env vars (see `DEPLOY.md`)
 
-Render creates **phantom-protocol** (API). Free tier = 1 service only. For "Join as validator" you'd need to add the coordinator as a separate service (requires paid plan). First connection can take 30–60s (free tier sleeps).
+Your API: `https://YOUR-APP.koyeb.app`. Use with dashboard: `https://relayer-phi.vercel.app/?api=https://YOUR-APP.koyeb.app`
 
 ## Usage
 

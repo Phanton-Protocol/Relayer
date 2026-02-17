@@ -1,8 +1,31 @@
-# Deploy Phantom Protocol to Render (from Relayer repo)
+# Deploy Phantom Protocol (no credit card)
 
-Deploy the relayer API and validator coordinator from the **public Relayer repo** — no credit card required.
+Deploy the relayer API from the **public Relayer repo**. Use **Koyeb** — free tier, **no credit card required**.
 
-## 1. Add circuit files (required for proof generation)
+---
+
+## Option A: Koyeb (recommended — no card)
+
+1. Go to [app.koyeb.com](https://app.koyeb.com) → Sign up with GitHub (no card)
+2. **Create Web Service** → Choose **GitHub**
+3. Select **Phanton-Protocol/Relayer**, branch `main`
+4. **Builder**: Choose **Dockerfile** (Koyeb will use the repo's Dockerfile)
+5. **Instance**: Pick the free tier (e.g. Nano / 0.25 vCPU)
+6. Add **Environment variables** (see table below)
+7. Click **Deploy**
+8. Your API URL: `https://YOUR-SERVICE-NAME.koyeb.app`
+
+---
+
+## Option B: Render (may require card)
+
+1. [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint**
+2. Connect **Phanton-Protocol/Relayer**, path `render.yaml`
+3. Add env vars in Dashboard
+
+---
+
+## 1. Circuit files (required for proof generation)
 
 The backend needs ZK circuit artifacts. Copy these from your core repo:
 
@@ -13,30 +36,11 @@ circuits/portfolio_note_js/portfolio_note.wasm
 circuits/portfolio_note_0001.zkey
 ```
 
-Place them in the `circuits/` folder and commit. Or set env vars on Render:
+Place them in the `circuits/` folder and commit. Or set env vars: `PROVER_WASM`, `PROVER_ZKEY`, etc. For testing: `DEV_BYPASS_PROOFS=true`
 
-- `PROVER_WASM` — path or URL to joinsplit.wasm
-- `PROVER_ZKEY` — path or URL to joinsplit_0001.zkey
-- `PORTFOLIO_WASM`, `PORTFOLIO_ZKEY` — for portfolio proofs
+## 2. Environment variables
 
-For testing without proofs: `DEV_BYPASS_PROOFS=true`
-
-## 2. Connect to Render
-
-1. Go to [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint**
-2. Connect **Phanton-Protocol/Relayer** (this repo)
-3. Branch: `main`
-4. Blueprint path: `render.yaml`
-5. Click **Apply**
-
-Render creates:
-
-- **phantom-protocol** — Relayer API
-- **phantom-validator-coordinator** — WebSocket coordinator for browser validators
-
-## 3. Set environment variables
-
-In Render → **phantom-protocol** → **Environment**:
+Add these in Koyeb (or Render) → Service → Environment:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
@@ -47,14 +51,12 @@ In Render → **phantom-protocol** → **Environment**:
 | `SWAP_ADAPTOR_ADDRESS` | Yes | SwapAdaptor contract |
 | `RELAYER_STAKING_ADDRESS` | Yes | `0x3c8c698335A4942A52a709091a441f27FF2a5bc8` (or your deployment) |
 | `CHAIN_ID` | No | Default 97 (BSC testnet) |
-| `VALIDATOR_URLS` | No | `https://phantom-validator-coordinator.onrender.com` for browser validators |
+| `VALIDATOR_URLS` | No | For browser validators (coordinator URL if deployed) |
 
-## 4. Dashboard
+## 3. Dashboard
 
-Deploy the dashboard to Vercel (already set up). Use:
+Dashboard is on Vercel. Use your API URL:
 
 ```
-https://relayer-phi.vercel.app/?api=https://phantom-protocol.onrender.com
+https://relayer-phi.vercel.app/?api=https://YOUR-APP.koyeb.app
 ```
-
-Replace with your Render URL after deploy.
