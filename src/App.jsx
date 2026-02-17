@@ -63,6 +63,10 @@ export default function App() {
   const { data: staking, error: stakingError } = useFetch(base ? `${base}/relayer/staking-status` : null, 10000);
   const { data: proofStats } = useFetch(base ? `${base}/relayer/proof-stats` : null, 5000);
   const { data: stakingStats } = useFetch(base ? `${base}/staking/stats` : null, 15000);
+  const { data: myStake } = useFetch(
+    base && wallet?.address ? `${base}/staking/balance?address=${encodeURIComponent(wallet.address)}` : null,
+    10000
+  );
   const { data: network } = useFetch(base ? `${base}/relayer/network` : null, 0);
 
   const [wallet, setWallet] = useState({ address: null, provider: null, signer: null });
@@ -148,6 +152,11 @@ export default function App() {
     try {
       const tokenAbi = ["function approve(address,uint256) returns (bool)", "function allowance(address,address) view returns (uint256)"];
       const token = new Contract(tokenAddr, tokenAbi, wallet.signer);
+      const allowance = await token.allowance(wallet.address, stakingAddr);
+      if (allowance > 0n) {
+        const resetTx = await token.approve(stakingAddr, 0n);
+        await resetTx.wait();
+      }
       const tx = await token.approve(stakingAddr, MaxUint256);
       await tx.wait();
       setApproveTx({ status: "success", hash: tx.hash });
@@ -169,6 +178,10 @@ export default function App() {
       const stakingContract = new Contract(stakingAddr, stakingAbi, wallet.signer);
       const allowance = await token.allowance(wallet.address, stakingAddr);
       if (allowance < amountWei) {
+        if (allowance > 0n) {
+          const resetTx = await token.approve(stakingAddr, 0n);
+          await resetTx.wait();
+        }
         const approveRes = await token.approve(stakingAddr, MaxUint256);
         await approveRes.wait();
       }
@@ -323,7 +336,7 @@ export default function App() {
         <Card title="Staking">
           {staking ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", fontSize: "0.9rem" }}>
-              <Row label="Staked" value={formatWei(staking.staked)} />
+              <Row label="Relayer stake" value={formatWei(staking.staked)} />
               <Row label="Min stake" value={formatWei(staking.minStake)} />
               <Row label="Total staked" value={formatWei(staking.totalStaked)} />
               <Row
@@ -348,7 +361,7 @@ export default function App() {
                     </div>
                   )}
                   <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>
-                    If stake fails with "insufficient allowance", click <strong>Approve</strong> first, wait for it to confirm, then Stake.
+                    Click <strong>Approve</strong> first (confirm in MetaMask), wait for ✓ Approved, then <strong>Stake</strong>. Use the relayer wallet — same as Relayer address above.
                   </div>
                   <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
                     <input
@@ -489,8 +502,10 @@ function ValidatorSetup({ base, relayer, staking, wallet }) {
       setValidatorError("Connect wallet first (top right).");
       return;
     }
-    if (!staking?.isRelayerValid) {
-      setValidatorError("Stake ≥ 1000 SHDW in the Relayer tab first. If staking shows an error, fix RELAYER_STAKING_ADDRESS on Render.");
+    const hasEnoughStake = myStake?.isValid || staking?.isRelayerValid;
+    if (!hasEnoughStake) {
+      const myStaked = myStake?.staked ? formatWei(myStake.staked) : "0";
+      setValidatorError(`Stake ≥ 1000 SHDW first. Your connected wallet has ${myStaked} staked. Connect the wallet that has the stake, or stake in the Relayer tab.`);
       return;
     }
     if (!coordinatorUrl) {
@@ -545,7 +560,7 @@ function ValidatorSetup({ base, relayer, staking, wallet }) {
       setValidatorError(e.message);
       setValidatorConnecting(false);
     }
-  }, [coordinatorUrl, wallet?.address, staking?.isRelayerValid]);
+  }, [coordinatorUrl, wallet?.address, staking?.isRelayerValid, myStake]);
 
   const leaveValidator = useCallback(() => {
     if (wsRef.current) {
@@ -633,7 +648,13 @@ function ValidatorSetup({ base, relayer, staking, wallet }) {
               </div>
             )}
           {!wallet?.address && <p style={{ color: "#f59e0b", fontSize: "0.9rem" }}>1. Connect wallet (top right)</p>}
-          {wallet?.address && !staking?.isRelayerValid && <p style={{ color: "#f59e0b", fontSize: "0.9rem" }}>2. Stake ≥ 1000 SHDW in Relayer tab</p>}
+          {wallet?.address && (
+            <p style={{ color: myStake?.isValid ? "#22c55e" : "#f59e0b", fontSize: "0.9rem" }}>
+              {myStake?.isValid
+                ? `✓ Your stake: ${formatWei(myStake?.staked || "0")} SHDW`
+                : `2. Your stake: ${formatWei(myStake?.staked || "0")} — need ≥ 1000 SHDW. Stake in Relayer tab.`}
+            </p>
+          )}
           {wallet?.address && staking?.isRelayerValid && !coordinatorUrl && <p style={{ color: "#6b7280", fontSize: "0.9rem" }}>Coordinator not configured. Set VALIDATOR_COORDINATOR_WS_URL on relayer.</p>}
           {validatorError && (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>

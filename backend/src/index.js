@@ -618,37 +618,39 @@ app.get("/verification-key", (req, res) => {
   res.json(JSON.parse(fs.readFileSync(vkPath, "utf8")));
 });
 
+async function getStakingContract(provider) {
+  let stakingAddr = RELAYER_STAKING_ADDRESS;
+  if (!stakingAddr && SHIELDED_POOL_ADDRESS) {
+    try {
+      const pool = new ethers.Contract(SHIELDED_POOL_ADDRESS, ["function relayerRegistry() view returns (address)"], provider);
+      stakingAddr = await pool.relayerRegistry();
+    } catch (_) {}
+  }
+  if (!stakingAddr || stakingAddr === ethers.ZeroAddress) {
+    throw new Error("Pool has no staking contract. Set RELAYER_STAKING_ADDRESS.");
+  }
+  return new ethers.Contract(stakingAddr, [
+    "function totalStaked() view returns (uint256)",
+    "function minStake() view returns (uint256)",
+    "function token() view returns (address)",
+    "function stakedBalance(address) view returns (uint256)",
+    "function getRewardTokens() view returns (address[])"
+  ], provider);
+}
+
 app.get("/staking/stats", async (req, res) => {
   if (!SHIELDED_POOL_ADDRESS || !RPC_URL) return res.status(500).json({ error: "Pool not configured" });
   try {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
-    let stakingAddr;
-    try {
-      const poolAbi = ["function relayerRegistry() view returns (address)"];
-      const pool = new ethers.Contract(SHIELDED_POOL_ADDRESS, poolAbi, provider);
-      stakingAddr = await pool.relayerRegistry();
-    } catch (e) {
-      return res.status(500).json({ error: `Pool read failed: ${e.message}` });
-    }
-    if (!stakingAddr || stakingAddr === ethers.ZeroAddress) {
-      if (RELAYER_STAKING_ADDRESS) stakingAddr = RELAYER_STAKING_ADDRESS;
-      else return res.status(500).json({ error: "Pool has no staking contract. Set RELAYER_STAKING_ADDRESS on Render." });
-    }
-    const stakingAbi = [
-      "function totalStaked() view returns (uint256)",
-      "function minStake() view returns (uint256)",
-      "function token() view returns (address)",
-      "function getRewardTokens() view returns (address[])"
-    ];
-    const staking = new ethers.Contract(stakingAddr, stakingAbi, provider);
+    const staking = await getStakingContract(provider);
     const [totalStaked, minStake, tokenAddr, rewardTokens] = await Promise.all([
       staking.totalStaked(),
       staking.minStake(),
       staking.token(),
-      staking.getRewardTokens()
+      staking.getRewardTokens().catch(() => [])
     ]);
     res.json({
-      stakingAddress: stakingAddr,
+      stakingAddress: staking.target,
       protocolTokenAddress: tokenAddr,
       totalStaked: totalStaked.toString(),
       minStake: minStake.toString(),
@@ -656,6 +658,29 @@ app.get("/staking/stats", async (req, res) => {
     });
   } catch (err) {
     console.error("[staking/stats]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/staking/balance", async (req, res) => {
+  const addr = req.query.address;
+  if (!addr || !ethers.isAddress(addr)) return res.status(400).json({ error: "Missing or invalid address" });
+  if (!SHIELDED_POOL_ADDRESS || !RPC_URL) return res.status(500).json({ error: "Pool not configured" });
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const staking = await getStakingContract(provider);
+    const [staked, minStake] = await Promise.all([
+      staking.stakedBalance(addr),
+      staking.minStake()
+    ]);
+    res.json({
+      address: addr,
+      staked: staked.toString(),
+      minStake: minStake.toString(),
+      isValid: staked >= minStake
+    });
+  } catch (err) {
+    console.error("[staking/balance]", err.message);
     res.status(500).json({ error: err.message });
   }
 });
