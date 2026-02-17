@@ -1191,12 +1191,11 @@ app.post("/swap/generate-proof", async (req, res) => {
   }
 });
 
-// Serve frontend static files when built (for Render / single-server deployment)
-const frontendDist = path.join(__dirname, "..", "..", "frontend", "dist");
-if (fs.existsSync(frontendDist)) {
-  app.use(express.static(frontendDist));
+const dashboardDist = path.join(__dirname, "..", "..", "dist");
+if (fs.existsSync(dashboardDist)) {
+  app.use(express.static(dashboardDist));
   app.get("*", (req, res) => {
-    res.sendFile(path.join(frontendDist, "index.html"));
+    res.sendFile(path.join(dashboardDist, "index.html"));
   });
 }
 

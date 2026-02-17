@@ -11,6 +11,7 @@ services:
     buildCommand: |
       npm install
       npm run backend:install
+      npm run build
 
     startCommand: node backend/src/index.js
 

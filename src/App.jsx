@@ -4,7 +4,6 @@ import { groth16 } from "snarkjs";
 
 const API_URL = import.meta.env.VITE_API_URL || "https://phantom-protocol.onrender.com";
 const BSC_TESTNET = { chainId: 97, chainIdHex: "0x61", rpcUrl: "https://data-seed-prebsc-1-s1.binance.org:8545", name: "BSC Testnet" };
-// Fallback addresses if API fails (BSC Testnet from config)
 const FALLBACK_STAKING = "0x3c8c698335A4942A52a709091a441f27FF2a5bc8";
 const FALLBACK_TOKEN = "0x0e161E683c325482c165A2863b24157754c131f1";
 
