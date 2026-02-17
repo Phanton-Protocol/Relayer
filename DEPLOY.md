@@ -1,10 +1,25 @@
 # Deploy Phantom Protocol (no credit card)
 
-Deploy the relayer API from the **public Relayer repo**. Use **Koyeb** — free tier, **no credit card required**.
+Deploy the relayer API from the **public Relayer repo**. Use **Vercel** — free tier, **no credit card required**.
 
 ---
 
-## Option A: Koyeb (recommended — no card)
+## Option A: Vercel (recommended — no card)
+
+Dashboard + API in one deployment:
+
+1. Go to [vercel.com](https://vercel.com) → Sign up with GitHub (no card)
+2. **Add New** → **Project** → Import **Phanton-Protocol/Relayer**
+3. **Environment variables** (Settings → Environment Variables):
+   - `VITE_API_URL` = `/api` (so dashboard uses same-origin API)
+   - `RPC_URL`, `RELAYER_PRIVATE_KEY`, `SHIELDED_POOL_ADDRESS`, `NOTE_STORAGE_ADDRESS`, `SWAP_ADAPTOR_ADDRESS`, `RELAYER_STAKING_ADDRESS`
+4. Click **Deploy**
+
+Your app: `https://YOUR-PROJECT.vercel.app` — dashboard at `/`, API at `/api`. Share: `https://YOUR-PROJECT.vercel.app` (API is built-in).
+
+---
+
+## Option B: Koyeb (Docker, may require card)
 
 1. Go to [app.koyeb.com](https://app.koyeb.com) → Sign up with GitHub (no card)
 2. **Create Web Service** → Choose **GitHub**

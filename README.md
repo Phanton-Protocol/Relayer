@@ -50,13 +50,13 @@ Keep the tab open when you want to validate. Deploy coordinator to Render for 24
 
 ## Deploy (no credit card)
 
-**Koyeb** — free tier, no card required:
+**Vercel** — free tier, no card:
 
-1. [koyeb.com](https://www.koyeb.com) → Create App → Docker → Connect **Phanton-Protocol/Relayer**
-2. Deploy (uses `Dockerfile`)
-3. Add env vars (see `DEPLOY.md`)
+1. [vercel.com](https://vercel.com) → Import **Phanton-Protocol/Relayer**
+2. Add env vars: `VITE_API_URL=/api`, `RPC_URL`, `RELAYER_PRIVATE_KEY`, `SHIELDED_POOL_ADDRESS`, `NOTE_STORAGE_ADDRESS`, `SWAP_ADAPTOR_ADDRESS`, `RELAYER_STAKING_ADDRESS`
+3. Deploy
 
-Your API: `https://YOUR-APP.koyeb.app`. Use with dashboard: `https://relayer-phi.vercel.app/?api=https://YOUR-APP.koyeb.app`
+Dashboard + API in one URL. No separate API needed.
 
 ## Usage
 

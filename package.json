@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "backend:install": "npm --prefix backend install"
+    "backend:install": "npm --prefix backend install",
+    "postinstall": "npm run backend:install"
   },
   "dependencies": {
     "ethers": "^6.16.0",
