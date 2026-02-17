@@ -55,11 +55,11 @@ const DB_PATH = (process.env.VERCEL || process.env.RENDER) ? "/tmp/relayer.db" :
 
 const db = initDb(DB_PATH);
 
-// Initialize Validator Network
 const VALIDATOR_URLS = process.env.VALIDATOR_URLS
   ? process.env.VALIDATOR_URLS.split(',').map((u) => u.trim()).filter(Boolean)
-  : []; // Set VALIDATOR_URLS on Render (e.g. https://phantom-validator.onrender.com)
-const validatorNetwork = new ValidatorNetwork(VALIDATOR_URLS, 6600); // 66% threshold
+  : []; 
+
+const validatorNetwork = new ValidatorNetwork(VALIDATOR_URLS, 6600); 
 
 const INTENT_DOMAIN = {
   name: "ShadowDeFiRelayer",
@@ -96,10 +96,9 @@ const DEPOSIT_TYPES = {
 
 const receipts = new Map();
 const intents = new Map();
-/** Pending shadow deposits: shadowAddress -> { depositor, token, amount, commitment, assetID, deadline } for sweeper */
+
 const shadowDeposits = new Map();
 
-/** Normalize address - frontend may send token objects with .address instead of string */
 function toAddress(v) {
   if (!v) return ethers.ZeroAddress;
   if (typeof v === "string") return v;
@@ -169,7 +168,8 @@ const poolInterface = new ethers.Interface([
 ]);
 
 const dexApiToken = "https://api.dexscreener.com/latest/dex/tokens/";
-const DEPOSIT_FEE_USD = 2n * 10n ** 8n; // $2 (8 decimals)
+const DEPOSIT_FEE_USD = 2n * 10n ** 8n; 
+
 const WBNB_BSC_MAINNET = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_BSC_TESTNET = "0xae13d989dac2f0debff460ac112a837c89baa7cd";
 
@@ -181,7 +181,8 @@ async function getDepositFeeBNBWei() {
     if (!price || price === 0n) throw new Error("No BNB price");
     return (DEPOSIT_FEE_USD * 10n ** 18n) / price;
   } catch (e) {
-    const fallback = CHAIN_ID === 97 ? 3333333333333333n : 3333333333333333n; // ~$2 at $600/BNB
+    const fallback = CHAIN_ID === 97 ? 3333333333333333n : 3333333333333333n; 
+
     return fallback;
   }
 }
@@ -205,7 +206,6 @@ const intentSchema = z.object({
   deadline: z.number().int(),
 });
 
-// Proof can be Solidity format: a/c as [x,y], b as [[x,y],[x,y]] (strings)
 const proofShape = z.object({
   a: z.union([z.string(), z.tuple([z.string(), z.string()])]),
   b: z.union([z.string(), z.array(z.array(z.string()).length(2)).length(2)]),
@@ -224,8 +224,6 @@ const swapSchema = z.object({
     encryptedPayload: z.string().optional(),
   }),
 });
-
-// Use shared toBigIntString from utils/bigint
 
 const normalizeMerklePath = (path) => {
   if (!Array.isArray(path)) return Array(10).fill("0");
@@ -340,7 +338,6 @@ app.post("/quote", async (req, res) => {
   }
   const { tokenIn, tokenOut, amountIn, tokenInDecimals, tokenOutDecimals, slippageBps, chainSlug } = parsed.data;
 
-  // If SwapAdaptor is configured, use on-chain router quoting for exact output matching.
   if (SWAP_ADAPTOR_ADDRESS && RPC_URL) {
     try {
       const provider = new ethers.JsonRpcProvider(RPC_URL);
@@ -349,7 +346,7 @@ app.post("/quote", async (req, res) => {
       ];
       const adaptor = new ethers.Contract(SWAP_ADAPTOR_ADDRESS, adaptorAbi, provider);
       const amountInBn = parseAmount(amountIn);
-      // Path can be provided by client by encoding address[] in swapParams.path; here we default to empty.
+
       const swapParams = {
         tokenIn,
         tokenOut,
@@ -383,31 +380,43 @@ app.post("/quote", async (req, res) => {
   let priceIn;
   let priceOut;
 
-  // Try DEXScreener API first for real-time prices
   try {
     priceIn = await getDexPriceUsd(tokenIn, chainSlug);
     priceOut = await getDexPriceUsd(tokenOut, chainSlug);
   } catch (dexError) {
     console.warn(`DEXScreener failed: ${dexError.message}, trying PancakeSwap fallback`);
 
-    // Fallback: Use realistic mock prices for testnet (DEXScreener often doesn't have testnet data)
     const mockPrices = {
-      "0x0000000000000000000000000000000000000000": 60000000000n, // BNB = $600
-      "0xae13d989dac2f0debff460ac112a837c89baa7cd": 60000000000n, // WBNB = $600
-      "0x7ef95a0fee0dd31b22626fa2e10ee6a223f8a684": 100000000n,   // tUSDT = $1
-      "0x64544969ed7ebf5f083679233325356ebe738930": 100000000n,   // tUSDC = $1
-      "0x78867bbeef44f2326bf8ddd1941a4439382ef2a7": 100000000n,   // tBUSD = $1
-      "0xfa60d973f7642b748046464e165a65b7323b0dee": 500000000n,   // tCAKE = $5
-      "0x8babbb98678facc7342735486c851abd7a0d17ca": 300000000000n, // tETH = $3000
-      "0x6ce8da28e2f864420840cf74474eff5fd80e65b8": 6000000000000n, // tBTCB = $60000
-      // Mainnet tokens (use real DEXScreener prices when available)
-      "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c": 60000000000n, // WBNB mainnet
-      "0x55d398326f99059ff775485246999027b3197955": 100000000n,   // USDT mainnet
-      "0xe9e7cea3dedca5984780bafc599bd69add087d56": 100000000n,   // BUSD mainnet
-      "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d": 100000000n,   // USDC mainnet
-      "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82": 500000000n,   // CAKE mainnet
-      "0x2170ed0880ac9a755fd29b2688956bd959f933f8": 300000000000n, // ETH mainnet
-      "0x7130d2a12b9bcbfae4f2634d864a1ee1ce3ead9c": 6000000000000n, // BTCB mainnet
+      "0x0000000000000000000000000000000000000000": 60000000000n, 
+
+      "0xae13d989dac2f0debff460ac112a837c89baa7cd": 60000000000n, 
+
+      "0x7ef95a0fee0dd31b22626fa2e10ee6a223f8a684": 100000000n,   
+
+      "0x64544969ed7ebf5f083679233325356ebe738930": 100000000n,   
+
+      "0x78867bbeef44f2326bf8ddd1941a4439382ef2a7": 100000000n,   
+
+      "0xfa60d973f7642b748046464e165a65b7323b0dee": 500000000n,   
+
+      "0x8babbb98678facc7342735486c851abd7a0d17ca": 300000000000n, 
+
+      "0x6ce8da28e2f864420840cf74474eff5fd80e65b8": 6000000000000n, 
+
+      "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c": 60000000000n, 
+
+      "0x55d398326f99059ff775485246999027b3197955": 100000000n,   
+
+      "0xe9e7cea3dedca5984780bafc599bd69add087d56": 100000000n,   
+
+      "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d": 100000000n,   
+
+      "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82": 500000000n,   
+
+      "0x2170ed0880ac9a755fd29b2688956bd959f933f8": 300000000000n, 
+
+      "0x7130d2a12b9bcbfae4f2634d864a1ee1ce3ead9c": 6000000000000n, 
+
     };
 
     priceIn = mockPrices[tokenIn.toLowerCase()] || 100000000n;
@@ -474,7 +483,6 @@ app.post("/swap", async (req, res) => {
     return res.status(400).json({ error: "Invalid intent signature" });
   }
 
-  // Register for internal FHE matching when encrypted payload is present
   try {
     const pi = swapData?.publicInputs || {};
     const enc = swapData?.encryptedPayload;
@@ -490,7 +498,7 @@ app.post("/swap", async (req, res) => {
       if (matched) console.log("✅ Internal FHE match found (order book); executing via DEX path.");
     }
   } catch (e) {
-    // Non-fatal
+
   }
 
   let txResult;
@@ -739,7 +747,6 @@ app.get("/relayer/staking-status", async (req, res) => {
   }
 });
 
-// Portfolio swap fee: contract expects protocolFee = feeOracle.calculateFee + swapFee (0.005%)
 app.get("/portfolio/swap-fee", async (req, res) => {
   if (!SHIELDED_POOL_ADDRESS || !RPC_URL) {
     return res.status(500).json({ error: "Pool not configured" });
@@ -764,7 +771,8 @@ app.get("/portfolio/swap-fee", async (req, res) => {
     let protocolFeeFromOracle = 0n;
     try {
       protocolFeeFromOracle = BigInt((await feeOracle.calculateFee(inputToken, amount)).toString());
-      if (protocolFeeFromOracle > amountBigInt) protocolFeeFromOracle = amountBigInt; // FeeOracle caps to amount
+      if (protocolFeeFromOracle > amountBigInt) protocolFeeFromOracle = amountBigInt; 
+
     } catch (e) {
       console.warn("FeeOracle.calculateFee failed, using 0:", e.message);
     }
@@ -908,7 +916,6 @@ app.get("/merkle/:commitment", async (req, res) => {
   try {
     const commitment = req.params.commitment;
 
-    // ALWAYS sync commitments from the pool contract to ensure we have the latest state
     if (!RPC_URL || !SHIELDED_POOL_ADDRESS) {
       return res.status(500).json({ error: "RPC_URL/SHIELDED_POOL_ADDRESS not configured" });
     }
@@ -921,10 +928,8 @@ app.get("/merkle/:commitment", async (req, res) => {
     ];
     const contract = new ethers.Contract(SHIELDED_POOL_ADDRESS, abi, provider);
 
-    // Get on-chain root for verification
     const onChainRoot = await contract.merkleRoot();
 
-    // Sync ALL commitments from contract (in-memory first; persist to DB when writable)
     const count = Number(await contract.commitmentCount());
     console.log(`[Merkle] Syncing ${count} commitments from contract...`);
 
@@ -942,7 +947,7 @@ app.get("/merkle/:commitment", async (req, res) => {
       try {
         saveCommitment(db, i, c, null);
       } catch (e) {
-        // DB read-only: continue with in-memory list only
+
       }
       syncedCommitments.push({ idx: i, commitment: c });
       if (i < 3 || (i < 10 && i % 2 === 0) || i === count - 1) {
@@ -955,7 +960,6 @@ app.get("/merkle/:commitment", async (req, res) => {
       throw new Error(`Failed to sync all commitments: got ${syncedCommitments.length}, expected ${count}`);
     }
 
-    // Find the commitment in synced list (exact or case-insensitive)
     const row = syncedCommitments.find(r => r.commitment === commitment)
       || syncedCommitments.find(r => r.commitment.toLowerCase() === commitment.toLowerCase());
     if (!row) {
@@ -968,11 +972,9 @@ app.get("/merkle/:commitment", async (req, res) => {
       });
     }
 
-    // Use in-memory synced list for tree (always matches contract order)
     const commitments = syncedCommitments.sort((a, b) => Number(a.idx) - Number(b.idx)).map(r => r.commitment);
     console.log(`[Merkle] Building tree with ${commitments.length} commitments (contract has ${count}), looking for index ${row.idx}`);
 
-    // Verify commitment at target index matches
     if (commitments[row.idx]?.toLowerCase() !== commitment.toLowerCase()) {
       console.error(`[Merkle] ❌ Commitment mismatch at index ${row.idx}`);
       console.error(`[Merkle]   Expected: ${commitment}`);
@@ -980,8 +982,6 @@ app.get("/merkle/:commitment", async (req, res) => {
       throw new Error(`Commitment mismatch at index ${row.idx}`);
     }
 
-    // ALWAYS use MiMC7 - this is what the circuit requires (hardcoded in joinsplit.circom)
-    // The circuit uses MiMC7 for Merkle tree verification, so we MUST use MiMC7 paths
     const { path, indices, root } = buildMerklePath(commitments, row.idx);
 
     const mimc7Match = root.toLowerCase() === onChainRoot.toLowerCase();
@@ -1073,9 +1073,8 @@ app.post("/portfolio/prove", async (req, res) => {
   }
 });
 
-// Schema for /swap/generate-proof: accepts backend (nested) or frontend (flattened) style
 const generateProofBodySchema = z.object({
-  // Nested (backend) style
+
   inputNote: z.object({
     assetID: z.union([z.string(), z.number()]),
     amount: z.union([z.string(), z.number()]),
@@ -1103,7 +1102,7 @@ const generateProofBodySchema = z.object({
   minOutputAmount: z.string().optional(),
   protocolFee: z.string().optional(),
   gasRefund: z.string().optional(),
-  // Flattened (frontend) style – normalized to nested in handler
+
   inputAssetId: z.union([z.string(), z.number()]).optional(),
   inputAmount: z.string().optional(),
   inputBlinding: z.string().optional(),
@@ -1246,7 +1245,7 @@ const encodeGroth16Proof = (proof) => {
     String(proof?.a?.[0] ?? 0),
     String(proof?.a?.[1] ?? 0)
   ];
-  // Handle both nested [[a,b],[c,d]] and flat [a,b,c,d] pi_b formats from snarkjs
+
   let b;
   if (Array.isArray(proof?.b?.[0]) && Array.isArray(proof?.b?.[1])) {
     b = [
@@ -1326,7 +1325,7 @@ const submitSelfThresholdValidation = async (signer, proof, publicSignals, label
   try {
     stakingAddress = await tv.stakingContract();
   } catch (e) {
-    // Threshold verifier is a direct verifier (e.g. Groth16VerifierAdapter) - no staking, no validation submission needed
+
     console.warn(`⚠️ Threshold verifier has no stakingContract (direct verifier mode) - skipping validation submission`);
     return;
   }
@@ -1377,7 +1376,6 @@ async function submitSwap(swapData) {
   const pi = swapData.publicInputs || {};
   const publicSignals = buildJoinSplitPublicSignals(pi);
 
-  // STEP 1: Get validator consensus (MANDATORY)
   const validationResult = DEV_BYPASS_VALIDATORS
     ? { valid: true, signatures: [], reason: "DEV_BYPASS_VALIDATORS" }
     : await validatorNetwork.verifyProof(swapData.proof, publicSignals);
@@ -1388,7 +1386,6 @@ async function submitSwap(swapData) {
 
   console.log(`✅ Validator consensus achieved (${validationResult.signatures.length} signatures)`);
 
-  // STEP 2: Submit to contract with validator signatures
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const signer = new ethers.Wallet(RELAYER_PRIVATE_KEY, provider);
   const abi = [
@@ -1486,7 +1483,6 @@ async function submitWithdraw(withdrawData) {
   const pi = withdrawData.publicInputs || {};
   const publicSignals = buildJoinSplitPublicSignals(pi);
 
-  // STEP 1: Get validator consensus (MANDATORY)
   const validationResult = DEV_BYPASS_VALIDATORS
     ? { valid: true, signatures: [], reason: "DEV_BYPASS_VALIDATORS" }
     : await validatorNetwork.verifyProof(withdrawData.proof, publicSignals);
@@ -1525,7 +1521,6 @@ async function submitWithdraw(withdrawData) {
     await submitThresholdValidations(signer, withdrawData.proof, publicSignals, validationResult.signatures, "withdraw");
   }
 
-  // STEP 2: Submit to contract
   const abi = [
     "function shieldedWithdraw(((bytes,bytes,bytes),(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256[10],uint256[10]),address,address,bytes)) external"
   ];
@@ -1662,7 +1657,6 @@ async function submitPortfolioSwap(swapData) {
   }
 }
 
-/** Decode common revert reasons from portfolio swap failures */
 function decodeSwapError(err) {
   const msg = err.reason || err.shortMessage || err.message || "";
   if (!err?.data) return msg;
@@ -1873,9 +1867,8 @@ async function submitDeposit(payload) {
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const signer = new ethers.Wallet(RELAYER_PRIVATE_KEY, provider);
 
-  // Shadow address flow: relayer deposits on behalf of user
   if (payload.token === ethers.ZeroAddress) {
-    // BNB deposit via shadow address - value = amount + $2 fee
+
     const feeWei = await getDepositFeeBNBWei();
     const totalValue = BigInt(payload.amount) + feeWei;
     const abi = [
@@ -1896,7 +1889,7 @@ async function submitDeposit(payload) {
     }
     return { txHash: receipt.hash, blockNumber: receipt.blockNumber };
   } else {
-    // ERC20 deposit via shadow address
+
     const abi = [
       "function depositFor(address depositor,address token,uint256 amount,bytes32 commitment,uint256 assetID) external"
     ];
@@ -1951,16 +1944,12 @@ function buildLeaves(rows) {
   return leaves;
 }
 
-// Rebuild tree using contract's _addCommitmentToTree() logic (keccak256 chain)
-// This matches what the DEPLOYED contract uses for deposits
-// Contract code: merkleRoot = keccak256(abi.encodePacked(merkleRoot, commitment, index));
 function rebuildKeccak256Tree(commitments) {
-  let root = ethers.ZeroHash; // Start with 0x0
+  let root = ethers.ZeroHash; 
 
-  // Build the chain exactly as contract does
   for (let idx = 0; idx < commitments.length; idx++) {
     const commitment = commitments[idx];
-    // Contract: merkleRoot = keccak256(abi.encodePacked(merkleRoot, commitment, index));
+
     const packed = ethers.solidityPacked(
       ["bytes32", "bytes32", "uint256"],
       [root, commitment, idx]
@@ -1971,14 +1960,9 @@ function rebuildKeccak256Tree(commitments) {
   return root;
 }
 
-// Rebuild tree using contract's IncrementalMerkleTree.insert() logic
-// This matches what swaps/withdrawals use (tree.insert())
-// Note: The deployed contract uses keccak256 for deposits, but swaps expect MiMC7
-// This creates a mismatch - we need to use keccak256 to match the deployed contract
 function rebuildIncrementalTree(commitments) {
   const depth = 10;
 
-  // Initialize zeros (same as contract)
   const zeros = [0n];
   let currentZero = 0n;
   for (let i = 1; i < depth; i++) {
@@ -1986,20 +1970,17 @@ function rebuildIncrementalTree(commitments) {
     zeros.push(currentZero);
   }
 
-  // Initialize filledSubtrees (same as contract's storage)
   const filledSubtrees = new Array(depth).fill(null);
 
-  // Store every node we compute so we can build paths to CURRENT root for any leaf
-  // nodeValues[level][position] = value at that (level, position); level 0 = leaves
   const nodeValues = [];
   for (let i = 0; i <= depth; i++) nodeValues[i] = {};
 
-  // Insert each commitment EXACTLY as contract's IncrementalMerkleTree.insert() does
   let root = zeros[depth - 1];
 
   for (let idx = 0; idx < commitments.length; idx++) {
     const leaf = toBigInt(commitments[idx]);
-    nodeValues[0][idx] = leaf; // store leaf
+    nodeValues[0][idx] = leaf; 
+
     let currentHash = leaf;
     let currentIndex = idx;
 
@@ -2024,24 +2005,24 @@ function rebuildIncrementalTree(commitments) {
   return { root, filledSubtrees, nodeValues, zeros };
 }
 
-// Build full Merkle tree (all levels) from commitments; used to get path to CURRENT root
 function buildFullMerkleTree(commitments) {
   const depth = 10;
-  const numLeaves = 1 << depth; // 1024
+  const numLeaves = 1 << depth; 
+
   const zeros = [0n];
   let currentZero = 0n;
   for (let i = 1; i < depth; i++) {
     currentZero = mimc7(currentZero, currentZero);
     zeros.push(currentZero);
   }
-  // Level 0 = leaves
+
   const levels = [];
   const level0 = [];
   for (let i = 0; i < numLeaves; i++) {
     level0.push(i < commitments.length ? toBigInt(commitments[i]) : zeros[0]);
   }
   levels.push(level0);
-  // Levels 1..depth-1: hash pairs
+
   for (let lev = 1; lev < depth; lev++) {
     const prev = levels[lev - 1];
     const size = prev.length >> 1;
@@ -2051,14 +2032,12 @@ function buildFullMerkleTree(commitments) {
     }
     levels.push(curr);
   }
-  // Top level: single root
+
   const top = levels[depth - 1];
   const root = mimc7(top[0], top[1]);
   return { levels, zeros, root };
 }
 
-// Build Merkle path that verifies against the CURRENT root (incremental tree)
-// Uses node values stored during rebuildIncrementalTree so path matches contract exactly
 function buildMerklePath(commitments, targetIndex) {
   const depth = 10;
   if (targetIndex < 0 || targetIndex >= commitments.length) {
@@ -2077,13 +2056,12 @@ function buildMerklePath(commitments, targetIndex) {
       ? nodeValues[i][siblingPos]
       : zeros[i];
     path.push(`0x${sibling.toString(16).padStart(64, "0")}`);
-    indices.push(pos % 2); // 0 = we are left, 1 = we are right
+    indices.push(pos % 2); 
+
   }
 
   return { path, indices, root: `0x${root.toString(16).padStart(64, "0")}` };
 }
-
-
 
 async function simulateSwap(intentId) {
   const fake = ethers.keccak256(ethers.toUtf8Bytes(intentId));
@@ -2125,11 +2103,11 @@ function parseAmount(value) {
 }
 
 function calcOracleFeeUsd(usdValue) {
-  // Minimum fee: $10 (with 8 decimals = 10 * 10^8)
+
   const feeFloor = 10n * 10n ** 8n;
-  // Percentage fee: 0.5% of USD value (5 / 1000 = 0.005 = 0.5%)
+
   const percentageFee = (usdValue * 5n) / 1000n;
-  // Return whichever is higher
+
   return percentageFee > feeFloor ? percentageFee : feeFloor;
 }
 
@@ -2181,7 +2159,7 @@ function loadConfig() {
     if (raw.RELAYER_STAKING_ADDRESS) {
       process.env.RELAYER_STAKING_ADDRESS = String(raw.RELAYER_STAKING_ADDRESS);
     }
-    // PORT from config overrides env (avoids Chrome ERR_UNSAFE_PORT on 5060)
+
     if (raw.PORT != null) process.env.PORT = String(raw.PORT);
   } catch (_) { }
 }

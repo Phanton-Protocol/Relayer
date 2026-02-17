@@ -146,19 +146,6 @@ export default function App() {
     };
   }, [wallet.address]);
 
-  const getStakingAddresses = useCallback(() => {
-    const rawStaking = (staking?.stakingAddress || stakingStats?.stakingAddress || FALLBACK_STAKING)?.trim();
-    const rawToken = (stakingStats?.protocolTokenAddress || FALLBACK_TOKEN)?.trim();
-    try {
-      return {
-        stakingAddr: rawStaking && rawStaking !== "undefined" ? getAddress(rawStaking) : null,
-        tokenAddr: rawToken && rawToken !== "undefined" ? getAddress(rawToken) : null
-      };
-    } catch {
-      return { stakingAddr: rawStaking || null, tokenAddr: rawToken || null };
-    }
-  }, [staking?.stakingAddress, stakingStats?.stakingAddress, stakingStats?.protocolTokenAddress]);
-
   const ensureNetwork = useCallback(async () => {
     const targetChainId = network?.chainId ?? BSC_TESTNET.chainId;
     const chainIdHex = "0x" + Number(targetChainId).toString(16);
@@ -175,8 +162,9 @@ export default function App() {
   }, [network?.chainId]);
 
   const approveTokens = async () => {
-    const { stakingAddr, tokenAddr } = getStakingAddresses();
-    if (!stakingAddr || !tokenAddr || !wallet.signer) return;
+    const stakingAddr = getAddress(FALLBACK_STAKING);
+    const tokenAddr = getAddress(FALLBACK_TOKEN);
+    if (!wallet.signer) return;
     setApproveTx({ status: "pending" });
     try {
       await ensureNetwork();
@@ -191,32 +179,25 @@ export default function App() {
   };
 
   const stake = async () => {
-    const { stakingAddr, tokenAddr } = getStakingAddresses();
-    if (!stakingAddr || !tokenAddr || !wallet.signer || !stakeAmount) return;
+    const stakingAddr = getAddress(FALLBACK_STAKING);
+    const tokenAddr = getAddress(FALLBACK_TOKEN);
+    if (!wallet.signer || !stakeAmount) return;
     setStakeTx({ status: "pending" });
     try {
       await ensureNetwork();
       const amountWei = parseEther(stakeAmount);
-      const tokenAbi = ["function balanceOf(address) view returns (uint256)", "function allowance(address,address) view returns (uint256)", "function approve(address,uint256) returns (bool)"];
+      const tokenAbi = ["function balanceOf(address) view returns (uint256)", "function approve(address,uint256) returns (bool)"];
       const stakingAbi = ["function stake(uint256) external"];
       const token = new Contract(tokenAddr, tokenAbi, wallet.signer);
       const stakingContract = new Contract(stakingAddr, stakingAbi, wallet.signer);
       const balance = await token.balanceOf(wallet.address);
       if (balance < amountWei) {
-        setStakeTx({ status: "error", error: `Insufficient balance. You have ${(Number(balance) / 1e18).toFixed(2)} SHDW. Need ${stakeAmount}. Add SHDW token ${tokenAddr} in MetaMask.` });
+        setStakeTx({ status: "error", error: `Insufficient balance. You have ${(Number(balance) / 1e18).toFixed(2)} SHDW. Need ${stakeAmount}. Add SHDW ${tokenAddr} in MetaMask.` });
         return;
       }
-      let allowance = await token.allowance(wallet.address, stakingAddr);
-      if (allowance < amountWei) {
-        setStakeTx({ status: "pending", step: "approve" });
-        const approveTx = await token.approve(stakingAddr, MaxUint256);
-        await approveTx.wait();
-        allowance = await token.allowance(wallet.address, stakingAddr);
-        if (allowance < amountWei) {
-          setStakeTx({ status: "error", error: "Approval succeeded but allowance still insufficient. Please try again." });
-          return;
-        }
-      }
+      setStakeTx({ status: "pending", step: "approve" });
+      const approveTx = await token.approve(stakingAddr, MaxUint256);
+      await approveTx.wait();
       setStakeTx({ status: "pending", step: "stake" });
       const tx = await stakingContract.stake(amountWei);
       await tx.wait();
@@ -395,7 +376,7 @@ export default function App() {
                   )}
                   <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: "0.25rem" }}>
                     <strong>Stake SHDW:</strong> Enter amount → Click <strong>Stake</strong>. If approval is needed, MetaMask will prompt twice (approve, then stake).
-                    <br /><span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>SHDW {getStakingAddresses().tokenAddr?.slice(0, 8)}… | Staking {getStakingAddresses().stakingAddr?.slice(0, 8)}…</span>
+                    <br /><span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>SHDW {FALLBACK_TOKEN.slice(0, 10)}… | Staking {FALLBACK_STAKING.slice(0, 10)}…</span>
                   </div>
                   {stakeTx.status === "error" && (stakeTx.error?.includes("insufficient allowance") || stakeTx.error?.includes("allowance")) && (
                     <div style={{ background: "#7f1d1d20", border: "1px solid #ef4444", borderRadius: 6, padding: "0.5rem 0.75rem", fontSize: "0.85rem", color: "#fca5a5", marginBottom: "0.5rem" }}>

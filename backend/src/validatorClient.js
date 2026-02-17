@@ -1,19 +1,3 @@
-/**
- * Validator Client - Auto-validator for stakers
- *
- * Run this after staking ≥ 1000 SHDW. Connects to coordinator and signs
- * proofs automatically. No server deploy needed.
- *
- * Usage:
- *   export VALIDATOR_PRIVATE_KEY=0x...
- *   export COORDINATOR_URL=ws://localhost:6005
- *   node src/validatorClient.js
- *
- * Or with .env:
- *   VALIDATOR_PRIVATE_KEY=0x...
- *   COORDINATOR_URL=ws://localhost:6005
- */
-
 require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") });
 const WebSocket = require("ws");
 const { ethers } = require("ethers");

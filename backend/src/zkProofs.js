@@ -1,15 +1,11 @@
-/**
- * @title ZK Proof Generation for Backend
- * @notice Generates Groth16 proofs for swaps and withdrawals
- * @dev Supports rapidsnark for 10-100x faster proof generation when RAPIDSNARK_PATH is set
- */
+
 
 const snarkjs = require("snarkjs");
 let zkKitProve = null;
 try {
   zkKitProve = require("@zk-kit/groth16").prove;
 } catch (_) {
-  /* @zk-kit/groth16 optional for faster consecutive proofs */
+  
 }
 const fs = require("fs");
 const path = require("path");
@@ -18,12 +14,11 @@ const os = require("os");
 const { mimc7, FIELD } = require("./mimc7");
 const { toBigIntString, toBigInt } = require("./utils/bigint");
 
-// Circuit paths
 const WASM_PATH = process.env.PROVER_WASM || path.join(__dirname, "..", "..", "circuits", "joinsplit_js", "joinsplit.wasm");
 const ZKEY_PATH = process.env.PROVER_ZKEY || path.join(__dirname, "..", "..", "circuits", "joinsplit_0001.zkey");
 const PORTFOLIO_WASM = process.env.PORTFOLIO_WASM || path.join(__dirname, "..", "..", "circuits", "portfolio_note_js", "portfolio_note.wasm");
 const PORTFOLIO_ZKEY = process.env.PORTFOLIO_ZKEY || path.join(__dirname, "..", "..", "circuits", "portfolio_note_0001.zkey");
-// Read at runtime so loadConfig() can populate from config.json
+
 function getRapidsnarkPath() {
   return process.env.RAPIDSNARK_PATH;
 }
@@ -31,7 +26,6 @@ const CIRCUITS_DIR = path.join(__dirname, "..", "..", "circuits");
 
 const DEV_BYPASS_PROOFS = process.env.DEV_BYPASS_PROOFS === "true";
 
-/** Proof generation stats for relayer dashboard */
 const proofStats = { swap: [], withdraw: [], portfolio: [], lastError: null };
 const MAX_STATS = 50;
 
@@ -52,10 +46,6 @@ function getProofStats() {
   };
 }
 
-/**
- * Generate witness.wtns using circom's witness calculator, then prove with rapidsnark.
- * Falls back to snarkjs fullProve if rapidsnark fails or is not configured.
- */
 async function proveWithRapidsnarkOrSnarkjs(circuitInputs, wasmPath, zkeyPath, circuitType = "joinsplit") {
   const startTime = Date.now();
 
@@ -71,7 +61,6 @@ async function proveWithRapidsnarkOrSnarkjs(circuitInputs, wasmPath, zkeyPath, c
     try {
       fs.writeFileSync(inputPath, JSON.stringify(circuitInputs, null, 0));
 
-      // Generate witness using circom's generate_witness.js
       const genWitnessPath = path.join(CIRCUITS_DIR, circuitType === "portfolio" ? "portfolio_note_js" : "joinsplit_js", "generate_witness.js");
       if (!fs.existsSync(genWitnessPath)) throw new Error("generate_witness.js not found");
       await new Promise((resolve, reject) => {
@@ -83,7 +72,6 @@ async function proveWithRapidsnarkOrSnarkjs(circuitInputs, wasmPath, zkeyPath, c
 
       if (!fs.existsSync(wtnsPath)) throw new Error("Witness file not created");
 
-      // Run rapidsnark prover
       await new Promise((resolve, reject) => {
         const proc = spawn(rapidsnarkPath, [zkeyPath, wtnsPath, proofPath, publicPath], { stdio: "pipe" });
         let err = "";
@@ -110,7 +98,6 @@ async function proveWithRapidsnarkOrSnarkjs(circuitInputs, wasmPath, zkeyPath, c
     }
   }
 
-  // Use @zk-kit/groth16 (faster for consecutive proofs) or snarkjs
   let proof;
   let publicSignals;
   let proverName = "snarkjs";
@@ -122,7 +109,7 @@ async function proveWithRapidsnarkOrSnarkjs(circuitInputs, wasmPath, zkeyPath, c
       publicSignals = result.publicSignals;
       proverName = "zk-kit";
     } catch (_) {
-      /* fall through to snarkjs */
+      
     }
   }
   if (!proof) {
@@ -144,10 +131,6 @@ async function proveWithRapidsnarkOrSnarkjs(circuitInputs, wasmPath, zkeyPath, c
   return { proof: solidityProof, publicSignals, generationTime: elapsed };
 }
 
-
-/**
- * Generate ZK proof for swap
- */
 async function generateSwapProof(swapData) {
   const {
     inputNote,
@@ -162,11 +145,6 @@ async function generateSwapProof(swapData) {
     gasRefund
   } = swapData;
 
-  // Use shared toBigIntString for normalization
-
-  // Ensure merklePath and merklePathIndices are arrays of exactly 10 strings
-  // merklePath values should be BigInt strings (no 0x prefix)
-  // merklePathIndices should be "0" or "1" strings
   const formatMerklePath = (path) => {
     if (!Array.isArray(path)) return Array(10).fill("0");
     const formatted = path.slice(0, 10).map(v => {
@@ -183,33 +161,30 @@ async function generateSwapProof(swapData) {
     if (!Array.isArray(indices)) return Array(10).fill("0");
     const formatted = indices.slice(0, 10).map(v => {
       const num = toBigInt(v);
-      return String(num % 2n); // Ensure 0 or 1
+      return String(num % 2n); 
+
     });
     while (formatted.length < 10) formatted.push("0");
     return formatted;
   };
 
   const circuitInputs = {
-    // Private inputs
+
     inputAssetID: inputNote.assetID.toString(),
     inputAmount: toBigIntString(inputNote.amount),
     inputBlindingFactor: toBigIntString(inputNote.blindingFactor),
     ownerPublicKey: toBigIntString(inputNote.ownerPublicKey),
-    
-    // Output Note 1 (Swap Result)
+
     outputAssetIDSwap: outputNoteSwap.assetID.toString(),
     outputAmountSwap: toBigIntString(outputNoteSwap.amount),
     swapBlindingFactor: toBigIntString(outputNoteSwap.blindingFactor),
-    
-    // Output Note 2 (Change)
+
     outputAssetIDChange: outputNoteChange.assetID.toString(),
     changeAmount: toBigIntString(outputNoteChange.amount),
     changeBlindingFactor: toBigIntString(outputNoteChange.blindingFactor),
-    
-    // Swap parameters
+
     swapAmount: toBigIntString(swapAmount),
-    
-    // Public inputs - convert hex strings to BigInt strings
+
     nullifier: toBigIntString(inputNote.nullifier),
     inputCommitment: toBigIntString(inputNote.commitment),
     outputCommitmentSwap: toBigIntString(outputNoteSwap.commitment),
@@ -219,8 +194,7 @@ async function generateSwapProof(swapData) {
     minOutputAmountSwap: toBigIntString(minOutputAmount),
     protocolFee: toBigIntString(protocolFee),
     gasRefund: toBigIntString(gasRefund),
-    
-    // Merkle proof - ensure arrays of 10 strings
+
     merklePath: formatMerklePath(merklePath),
     merklePathIndices: formatMerkleIndices(merklePathIndices)
   };
@@ -260,15 +234,13 @@ async function generateSwapProof(swapData) {
     circuitInputs.nullifier = expectedNullifier;
   }
 
-  // Persist inputs for offline debugging when proofs fail.
   try {
     const debugPath = path.join(__dirname, "..", "..", "circuits", "debug_last_swap_inputs.json");
     fs.writeFileSync(debugPath, JSON.stringify(circuitInputs, null, 2));
   } catch (e) {
-    // Best-effort debug write; ignore errors.
+
   }
 
-  // Keep public and private swap outputs aligned for circuit constraint.
   if (BigInt(circuitInputs.outputAmountSwapPublic) !== BigInt(circuitInputs.outputAmountSwap)) {
     console.log(
       `   ⚠️ Aligning outputAmountSwapPublic to outputAmountSwap: ${circuitInputs.outputAmountSwapPublic} -> ${circuitInputs.outputAmountSwap}`
@@ -276,7 +248,6 @@ async function generateSwapProof(swapData) {
     circuitInputs.outputAmountSwapPublic = circuitInputs.outputAmountSwap;
   }
 
-  // Ensure amount conservation matches circuit expectations.
   const inputAmountBigInt = toBigInt(inputNote.amount);
   const swapAmountBigInt = toBigInt(swapAmount);
   const protocolFeeBigInt = toBigInt(protocolFee);
@@ -299,7 +270,6 @@ async function generateSwapProof(swapData) {
     );
   }
 
-  // Validate commitments against circuit MiMC7 chaining
   const expectedInputCommitment = mimcCommitment(
     BigInt(circuitInputs.inputAssetID),
     BigInt(circuitInputs.inputAmount),
@@ -357,19 +327,12 @@ async function generateSwapProof(swapData) {
     };
   }
 
-  // Verify Merkle path before generating proof - using EXACT circuit logic
-  // CRITICAL: Field arithmetic in circom automatically handles negatives via modulo
-  // We must ensure our JavaScript matches this exactly
-  // Helper for field arithmetic (handles negatives correctly)
-  // CRITICAL: Must match circom's field arithmetic exactly
-  // In circom, all arithmetic is automatically modulo FIELD
-  // For subtraction: (a - b) mod FIELD, if negative, add FIELD
   const fieldAdd = (a, b) => {
     return (a + b) % FIELD;
   };
   const fieldSub = (a, b) => {
     const result = (a - b) % FIELD;
-    // Handle negative modulo
+
     return result < 0n ? result + FIELD : result;
   };
   const fieldMul = (a, b) => {
@@ -384,24 +347,12 @@ async function generateSwapProof(swapData) {
   for (let i = 0; i < 10; i++) {
     const pathValue = BigInt(circuitInputs.merklePath[i]);
     const idx = BigInt(circuitInputs.merklePathIndices[i]);
-    
-    // WASM was compiled with OLD circuit logic (leftDiff/rightDiff approach):
-    // leftDiff[i] <== merklePath[i] - cur[i];
-    // left[i] <== cur[i] + merklePathIndices[i] * leftDiff[i];
-    // rightDiff[i] <== cur[i] - merklePath[i];
-    // right[i] <== merklePath[i] + merklePathIndices[i] * rightDiff[i];
-    // merkleHash[i].x_in <== left[i];
-    // merkleHash[i].k <== right[i];
-    // cur[i + 1] <== merkleHash[i].out;
-    
-    // Match WASM exactly using field arithmetic:
+
     const leftDiff = fieldSub(pathValue, computedRoot);
     const left = fieldAdd(computedRoot, fieldMul(idx, leftDiff));
     const rightDiff = fieldSub(computedRoot, pathValue);
     const right = fieldAdd(pathValue, fieldMul(idx, rightDiff));
-    
-    // Circuit uses: MiMC7.x_in = left, MiMC7.k = right
-    // Our JS: mimc7(x, k) where x is first param, k is second
+
     computedRoot = mimc7(left, right);
     
     if (i < 3) {
@@ -419,7 +370,7 @@ async function generateSwapProof(swapData) {
     console.error(`   Expected:         0x${expectedRoot.toString(16).padStart(64, "0")}`);
     console.error(`   ⚠️  This should match if backend is using MiMC7 correctly`);
     console.error(`   ⚠️  Continuing anyway - circuit will fail but we can see the exact error...`);
-    // Don't throw - let the circuit fail to see the exact error
+
   } else {
     console.log(`✅ Merkle path verification passed (MiMC7)`);
   }
@@ -440,16 +391,15 @@ async function generateSwapProof(swapData) {
   console.log(`   Output AssetID Change: ${circuitInputs.outputAssetIDChange}`);
   console.log(`   Output Amount Swap (private): ${circuitInputs.outputAmountSwap}`);
   console.log(`   Output Amount Swap (public): ${circuitInputs.outputAmountSwapPublic}`);
-  
-  // Verify the computed root matches what we're passing
-  const computedRootFromPath = computedRoot; // From verification above
+
+  const computedRootFromPath = computedRoot; 
+
   const merkleRootBigInt = BigInt(circuitInputs.merkleRoot);
   console.log(`\n🔍 Root Comparison:`);
   console.log(`   Computed from path: 0x${computedRootFromPath.toString(16).padStart(64, "0")}`);
   console.log(`   Passed to circuit:  0x${merkleRootBigInt.toString(16).padStart(64, "0")}`);
   console.log(`   Match: ${computedRootFromPath === merkleRootBigInt ? "✅ YES" : "❌ NO"}`);
-  
-  // EXTENSIVE DEBUG: Log every single input value
+
   console.log(`\n🔍 EXTENSIVE DEBUG - ALL CIRCUIT INPUTS:`);
   console.log(`   inputCommitment: ${circuitInputs.inputCommitment} (type: ${typeof circuitInputs.inputCommitment})`);
   console.log(`   merkleRoot: ${circuitInputs.merkleRoot} (type: ${typeof circuitInputs.merkleRoot})`);
@@ -463,33 +413,22 @@ async function generateSwapProof(swapData) {
   console.log(`   merklePathIndices: [${circuitInputs.merklePathIndices.slice(0, 5).join(", ")}...]`);
   console.log(`   All merklePath are strings: ${circuitInputs.merklePath.every(p => typeof p === 'string')}`);
   console.log(`   All merklePathIndices are strings: ${circuitInputs.merklePathIndices.every(i => typeof i === 'string')}`);
-  
-  // Verify computed root step by step matches what circuit should compute
-  // NEW SIMPLER APPROACH: Match Solidity MerkleTree.calculateRoot exactly
-  // if idx==0: mimc7(current, path)
-  // if idx==1: mimc7(path, current)
+
   console.log(`\n🔍 VERIFYING CIRCUIT COMPUTATION STEP-BY-STEP (SIMPLIFIED - MATCHES SOLIDITY):`);
   let circuitComputedRoot = BigInt(circuitInputs.inputCommitment);
   for (let i = 0; i < 10; i++) {
     const pathVal = BigInt(circuitInputs.merklePath[i]);
     const idx = BigInt(circuitInputs.merklePathIndices[i]);
-    
-    // Circuit now uses simpler approach matching Solidity:
-    // left = (1 - idx) * cur + idx * path
-    // right = idx * cur + (1 - idx) * path
-    // When idx=0: left=cur, right=path -> mimc7(cur, path)
-    // When idx=1: left=path, right=cur -> mimc7(path, cur)
+
     const left = ((1n - idx) * circuitComputedRoot + idx * pathVal) % FIELD;
     const right = (idx * circuitComputedRoot + (1n - idx) * pathVal) % FIELD;
-    
-    // Normalize negatives
+
     const leftNorm = left < 0n ? left + FIELD : left;
     const rightNorm = right < 0n ? right + FIELD : right;
     
     const oldRoot = circuitComputedRoot;
     circuitComputedRoot = mimc7(leftNorm, rightNorm);
-    
-    // Detailed logging for first few steps
+
     if (i < 3) {
       console.log(`   Level ${i}:`);
       console.log(`     path=${pathVal.toString().substring(0, 20)}...`);
@@ -515,8 +454,7 @@ async function generateSwapProof(swapData) {
     console.error(`   ❌ MISMATCH! Circuit would compute: 0x${circuitComputedRoot.toString(16).padStart(64, "0")}`);
     console.error(`      But we're passing: 0x${merkleRootBigInt.toString(16).padStart(64, "0")}`);
   }
-  
-  // CRITICAL: Try witness generation first to see exact constraint failure
+
   console.log(`\n🔍 ATTEMPTING WITNESS GENERATION (to identify failing constraint):`);
   try {
     const witness = await snarkjs.wtns.calculate(
@@ -531,8 +469,7 @@ async function generateSwapProof(swapData) {
     console.error(`   Stack: ${witnessError.stack}`);
     console.error(`   This indicates a CONSTRAINT VIOLATION.`);
     console.error(`   The circuit's computation doesn't match the inputs.`);
-    
-    // Try to get more details about which constraint failed
+
     if (witnessError.message.includes("line:")) {
       const lineMatch = witnessError.message.match(/line:\s*(\d+)/);
       if (lineMatch) {
@@ -544,8 +481,7 @@ async function generateSwapProof(swapData) {
         }
       }
     }
-    
-    // Don't throw - let fullProve try to get better error message
+
     console.error(`   Continuing to fullProve to get more details...`);
   }
 
@@ -563,9 +499,6 @@ async function generateSwapProof(swapData) {
   }
 }
 
-/**
- * Generate ZK proof for withdrawal
- */
 async function generateWithdrawProof(withdrawData) {
   const {
     inputNote,
@@ -579,9 +512,6 @@ async function generateWithdrawProof(withdrawData) {
     gasRefund
   } = withdrawData;
 
-  // Helper functions (same as swap)
-  // Use shared toBigIntString for normalization
-  
   const formatMerklePath = (path) => {
     if (!Array.isArray(path)) return Array(10).fill("0");
     const formatted = path.slice(0, 10).map(v => toBigIntString(v));
@@ -595,10 +525,7 @@ async function generateWithdrawProof(withdrawData) {
     while (formatted.length < 10) formatted.push("0");
     return formatted;
   };
-  
-  // Withdraw uses the same circuit as swap, but with swap outputs set to 0
-  // The circuit expects: inputAmount = swapAmount + changeAmount + protocolFee + gasRefund
-  // For withdrawal: swapAmount = inputAmount - changeAmount - protocolFee - gasRefund
+
   const inputAmountBigInt = toBigInt(inputNote.amount);
   const changeAmountBigInt = toBigInt(outputNoteChange.amount);
   const protocolFeeBigInt = toBigInt(protocolFee);
@@ -606,37 +533,35 @@ async function generateWithdrawProof(withdrawData) {
   const swapAmountForWithdraw = inputAmountBigInt - changeAmountBigInt - protocolFeeBigInt - gasRefundBigInt;
   
   const circuitInputs = {
-    // Private inputs
+
     inputAssetID: inputNote.assetID.toString(),
     inputAmount: toBigIntString(inputNote.amount),
     inputBlindingFactor: toBigIntString(inputNote.blindingFactor),
     ownerPublicKey: toBigIntString(inputNote.ownerPublicKey),
-    
-    // Output Note 1 (Swap Result) - Set to 0 for withdrawal
+
     outputAssetIDSwap: "0",
     outputAmountSwap: "0",
     swapBlindingFactor: "0",
-    
-    // Output Note 2 (Change)
+
     outputAssetIDChange: outputNoteChange.assetID.toString(),
     changeAmount: toBigIntString(outputNoteChange.amount),
     changeBlindingFactor: toBigIntString(outputNoteChange.blindingFactor),
-    
-    // Swap Parameters (for withdrawal, this is the amount being withdrawn)
+
     swapAmount: swapAmountForWithdraw.toString(),
-    
-    // Public inputs
+
     nullifier: toBigIntString(inputNote.nullifier),
     inputCommitment: toBigIntString(inputNote.commitment),
-    outputCommitmentSwap: "0", // Zero for withdrawal
+    outputCommitmentSwap: "0", 
+
     outputCommitmentChange: toBigIntString(outputNoteChange.commitment),
     merkleRoot: toBigIntString(merkleRoot),
-    outputAmountSwapPublic: "0", // Zero for withdrawal
-    minOutputAmountSwap: "0", // Zero for withdrawal
+    outputAmountSwapPublic: "0", 
+
+    minOutputAmountSwap: "0", 
+
     protocolFee: toBigIntString(protocolFee),
     gasRefund: toBigIntString(gasRefund),
-    
-    // Merkle proof
+
     merklePath: formatMerklePath(merklePath),
     merklePathIndices: formatMerkleIndices(merklePathIndices)
   };
@@ -674,17 +599,7 @@ async function generateWithdrawProof(withdrawData) {
   }
 }
 
-/**
- * Generate ZK proof for portfolio note update
- * inputs: {
- *  oldBalances, newBalances, oldBlindingFactor, newBlindingFactor,
- *  ownerPublicKey, oldNonce, newNonce,
- *  oldCommitment, newCommitment, inputAssetID, outputAssetID,
- *  swapAmount, outputAmount, minOutputAmount, protocolFee, gasRefund
- * }
- */
 async function generatePortfolioProof(inputs) {
-  // Use shared toBigIntString for normalization
 
   const circuitInputs = {
     oldBalances: (inputs.oldBalances || []).map(toBigIntString),
@@ -737,19 +652,11 @@ async function generatePortfolioProof(inputs) {
   }
 }
 
-/**
- * Generate ZK proof for universal note ownership
- */
 async function generateNoteProof(noteData, merkleProof) {
-  // This would generate a ZK proof proving:
-  // 1. The note exists in the merkle tree
-  // 2. The note belongs to the user
-  // 3. The note hasn't expired
-  // Without revealing the note contents
 
-  // Placeholder implementation - in production, use snarkjs with the note-proof circuit
   const proof = {
-    proof: [0, 0, 0, 0, 0, 0, 0, 0], // Mock proof
+    proof: [0, 0, 0, 0, 0, 0, 0, 0], 
+
     publicInputs: [
       noteData.noteHash,
       noteData.userAddress,

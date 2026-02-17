@@ -1,37 +1,29 @@
-/**
- * Validator Network Client
- * 
- * Collects signatures from multiple validators in parallel for instant verification.
- */
+
 
 const axios = require('axios');
 
 class ValidatorNetwork {
   constructor(validatorUrls, thresholdBps = 6600) {
-    this.validators = validatorUrls; // Array of validator endpoints
-    this.thresholdBps = thresholdBps; // 6600 = 66%
-    this.timeout = Number(process.env.VALIDATOR_TIMEOUT_MS || 20000); // 20 seconds max per validator
+    this.validators = validatorUrls; 
+
+    this.thresholdBps = thresholdBps; 
+
+    this.timeout = Number(process.env.VALIDATOR_TIMEOUT_MS || 20000); 
+
     this.maxRetries = Number(process.env.VALIDATOR_RETRIES || 3);
     this.retryBaseMs = Number(process.env.VALIDATOR_RETRY_BASE_MS || 500);
   }
 
-  /**
-   * Submit proof to all validators and collect signatures
-   * @returns {Object} { valid, signatures, totalVotingPower }
-   */
   async verifyProof(proof, publicInputs) {
     console.log(`\n📡 Broadcasting to ${this.validators.length} validators...`);
     const startTime = Date.now();
 
-    // Send to all validators in parallel
     const requests = this.validators.map(url => 
       this.requestValidation(url, proof, publicInputs)
     );
 
-    // Wait for all responses (with timeout)
     const results = await Promise.allSettled(requests);
 
-    // Log all validator responses for debugging
     results.forEach((result, i) => {
       const url = this.validators[i];
       if (result.status === 'fulfilled' && result.value) {
@@ -43,14 +35,12 @@ class ValidatorNetwork {
       }
     });
 
-    // Filter successful validations
     const validations = results
       .filter(r => r.status === 'fulfilled' && r.value)
       .map(r => r.value);
 
     console.log(`✅ Received ${validations.length}/${this.validators.length} responses (${Date.now() - startTime}ms)`);
 
-    // Coordinator returns aggregated response (multiple stakers in one)
     const aggregated = validations.find(v => v.aggregated);
     if (aggregated) {
       const totalVotingPower = BigInt(aggregated.totalVotingPower);
@@ -76,7 +66,6 @@ class ValidatorNetwork {
       };
     }
 
-    // Standard validators: calculate total voting power
     let totalVotingPower = 0n;
     let validVotingPower = 0n;
     
@@ -99,7 +88,6 @@ class ValidatorNetwork {
       };
     }
 
-    // Check if threshold is met
     const validPercentage = Number((validVotingPower * 10000n) / totalVotingPower) / 100;
     const thresholdMet = (validVotingPower * 10000n) >= (totalVotingPower * BigInt(this.thresholdBps));
 
@@ -116,7 +104,6 @@ class ValidatorNetwork {
       };
     }
 
-    // Filter only VALID signatures
     const validSignatures = validations
       .filter(v => v.valid)
       .map(v => ({
@@ -136,9 +123,6 @@ class ValidatorNetwork {
     };
   }
 
-  /**
-   * Request validation from a single validator
-   */
   async requestValidation(validatorUrl, proof, publicInputs) {
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
@@ -159,9 +143,6 @@ class ValidatorNetwork {
     return null;
   }
 
-  /**
-   * Health check all validators
-   */
   async checkHealth() {
     console.log(`\n🏥 Checking ${this.validators.length} validators...`);
     

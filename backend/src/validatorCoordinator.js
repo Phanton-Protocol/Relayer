@@ -1,14 +1,4 @@
-/**
- * Validator Coordinator - Auto-validator mode
- *
- * Stakers connect via WebSocket. When relayer needs signatures, coordinator
- * broadcasts to connected stakers who sign automatically. No manual server deploy.
- *
- * Usage:
- *   1. Start coordinator: node src/validatorCoordinator.js
- *   2. Stakers run: node src/validatorClient.js
- *   3. Set VALIDATOR_URLS=http://coordinator-url/verify in relayer
- */
+
 
 require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") });
 const express = require("express");
@@ -19,7 +9,7 @@ const { ethers } = require("ethers");
 const COORDINATOR_PORT = process.env.PORT || process.env.VALIDATOR_COORDINATOR_PORT || 6005;
 const RPC_URL = process.env.RPC_URL || "https://data-seed-prebsc-1-s1.binance.org:8545";
 const RELAYER_STAKING_ADDRESS = process.env.RELAYER_STAKING_ADDRESS;
-const THRESHOLD_BPS = 6600; // 66%
+const THRESHOLD_BPS = 6600; 
 
 if (!RELAYER_STAKING_ADDRESS) {
   console.error("❌ Set RELAYER_STAKING_ADDRESS in .env");
@@ -32,10 +22,8 @@ app.use(express.json({ limit: "10mb" }));
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// Connected stakers: address -> { ws, votingPower, lastSeen }
 const stakers = new Map();
 
-// Get voting power from staking contract
 async function getVotingPower(address) {
   try {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
@@ -76,7 +64,6 @@ wss.on("connection", async (ws, req) => {
   });
 });
 
-// Health
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
@@ -85,10 +72,6 @@ app.get("/health", (req, res) => {
   });
 });
 
-/**
- * POST /verify - Same interface as validatorServer
- * Broadcasts to connected stakers, aggregates signatures
- */
 app.post("/verify", async (req, res) => {
   const { proof, publicInputs } = req.body;
   if (!proof || !publicInputs) {

@@ -5,7 +5,6 @@ function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-// In-memory + JSON file fallback when better-sqlite3 is not available (e.g. Node 24)
 function initDbJson(dbPath) {
   const dir = path.dirname(dbPath);
   ensureDir(dir);
