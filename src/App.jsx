@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { BrowserProvider, Contract, parseEther, keccak256, solidityPacked, getBytes, AbiCoder } from "ethers";
+import { BrowserProvider, Contract, parseEther, MaxUint256, keccak256, solidityPacked, getBytes, AbiCoder } from "ethers";
 import { groth16 } from "snarkjs";
 
 const API_URL = import.meta.env.VITE_API_URL || "https://phantom-protocol.onrender.com";
@@ -68,6 +68,7 @@ export default function App() {
   const [wallet, setWallet] = useState({ address: null, provider: null, signer: null });
   const [stakeAmount, setStakeAmount] = useState("");
   const [stakeTx, setStakeTx] = useState({ status: null, hash: null, error: null });
+  const [approveTx, setApproveTx] = useState({ status: null, hash: null, error: null });
   const [connectError, setConnectError] = useState(null);
   const [connecting, setConnecting] = useState(false);
 
@@ -139,6 +140,22 @@ export default function App() {
     };
   }, [wallet.address]);
 
+  const approveTokens = async () => {
+    const stakingAddr = staking?.stakingAddress;
+    const tokenAddr = stakingStats?.protocolTokenAddress;
+    if (!stakingAddr || !tokenAddr || !wallet.signer) return;
+    setApproveTx({ status: "pending" });
+    try {
+      const tokenAbi = ["function approve(address,uint256) returns (bool)", "function allowance(address,address) view returns (uint256)"];
+      const token = new Contract(tokenAddr, tokenAbi, wallet.signer);
+      const tx = await token.approve(stakingAddr, MaxUint256);
+      await tx.wait();
+      setApproveTx({ status: "success", hash: tx.hash });
+    } catch (e) {
+      setApproveTx({ status: "error", error: e.message });
+    }
+  };
+
   const stake = async () => {
     const stakingAddr = staking?.stakingAddress;
     const tokenAddr = stakingStats?.protocolTokenAddress;
@@ -152,8 +169,8 @@ export default function App() {
       const stakingContract = new Contract(stakingAddr, stakingAbi, wallet.signer);
       const allowance = await token.allowance(wallet.address, stakingAddr);
       if (allowance < amountWei) {
-        const approveTx = await token.approve(stakingAddr, amountWei);
-        await approveTx.wait();
+        const approveRes = await token.approve(stakingAddr, MaxUint256);
+        await approveRes.wait();
       }
       const tx = await stakingContract.stake(amountWei);
       await tx.wait();
@@ -330,6 +347,9 @@ export default function App() {
                         : "⚠ Wrong wallet — connect the relayer wallet (see Relayer address above). Import its key into MetaMask if needed."}
                     </div>
                   )}
+                  <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                    If stake fails with "insufficient allowance", click <strong>Approve</strong> first, wait for it to confirm, then Stake.
+                  </div>
                   <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
                     <input
                       type="text"
@@ -349,6 +369,22 @@ export default function App() {
                       }}
                     />
                     <button
+                      onClick={approveTokens}
+                      disabled={approveTx.status === "pending"}
+                      style={{
+                        padding: "0.5rem 1rem",
+                        background: approveTx.status === "pending" ? "#4b5563" : "#6366f1",
+                        border: "none",
+                        borderRadius: 6,
+                        color: "#fff",
+                        fontWeight: 600,
+                        cursor: approveTx.status !== "pending" ? "pointer" : "not-allowed",
+                        fontSize: "0.9rem"
+                      }}
+                    >
+                      {approveTx.status === "pending" ? "Approving…" : approveTx.status === "success" ? "✓ Approved" : "Approve"}
+                    </button>
+                    <button
                       onClick={stake}
                       disabled={!stakeAmount || stakeTx.status === "pending"}
                       style={{
@@ -365,6 +401,9 @@ export default function App() {
                       {stakeTx.status === "pending" ? "Staking…" : "Stake"}
                     </button>
                   </div>
+                  {approveTx.status === "error" && (
+                    <div style={{ color: "#ef4444", fontSize: "0.85rem" }}>Approve failed: {approveTx.error}</div>
+                  )}
                   {stakeTx.status === "success" && (
                     <div style={{ color: "#22c55e", fontSize: "0.85rem" }}>Staked! Tx: {stakeTx.hash?.slice(0, 10)}…</div>
                   )}
